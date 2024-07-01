@@ -34,7 +34,7 @@ def analyze_security(url):
     #         input_type = input.get("type")
     #         if  input_type == "text":
     #             input_value = "test"
-        
+    return None
 
 if __name__ == "__main__":
     app.run(port=5000)
