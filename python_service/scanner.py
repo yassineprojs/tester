@@ -3,9 +3,6 @@ import aiohttp #For making asynchronous HTTP requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse #For URL manipulation
 import re
-import ssl #For SSL/TLS checking
-import socket #For SSL/TLS checking
-from concurrent.futures import ThreadPoolExecutor # For running blocking operations in separate threads
 
 class AdvancedScanner:
     def __init__(self, url, max_depth=3, max_urls=100, concurrency=10):
@@ -66,33 +63,14 @@ class AdvancedScanner:
     async def check_vulnerabilities(self, url, content):
         await asyncio.gather(
             self.check_xss(url, content),
-            self.check_open_redirect(url),
-            self.check_ssl(url),
-            self.check_headers(url),
-            self.check_sql_injection(url)
-        )
+            # self.check_sql_injection(url)
+            # self.check_open_redirect(url),
+            # self.check_ssl(url),
+            # self.check_headers(url),
+)
 
 
-    async def check_xss(self, url, content):
-        xss_patterns =[
-            r'<script>.*?</script>',
-            r'on\w+=".*?"',
-            r'javascript:',
-            r'<img.*?onerror=.*?>',
-            r'<iframe.*?src=.*?>',
-            r'<svg.*?onload=.*?>',
-            r'<link.*?href=.*?>',
-            r'<meta.*?content=.*?>',
-            r'<div.*?style=.*?expression\(.*?\).*?>',
-            r'<.*?style=.*?-moz-binding:.*?>',
-            r'<.*?dynsrc=.*?>',
-            r'<.*?lowsrc=.*?>',
-            r'<.*?datasrc=.*?>'
-        ]
-        for pattern in xss_patterns:
-            if re.search(pattern, content, re.IGNORECASE):
-                self.vulnerabilities.append(f"Potential XSS vulnerability found in {url}")
-                break
+  
 
 
 

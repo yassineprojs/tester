@@ -1,6 +1,6 @@
 from flask import Flask, jsonify,request
 from flask_cors import CORS
-from scanner import Scanner
+from scanner import AdvancedScanner
 
 app = Flask(__name__)
 CORS(app)
@@ -19,7 +19,7 @@ def analyse():
 
 
 def analyze_security(url):
-    vuln_scanner = Scanner(url)
+    vuln_scanner = AdvancedScanner(url)
     vuln_scanner.crawl()
     vulnerabilities = vuln_scanner.run_scanner()
     
