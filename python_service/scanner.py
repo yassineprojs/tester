@@ -3,6 +3,7 @@ import aiohttp #For making asynchronous HTTP requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse #For URL manipulation
 import re
+from xss import XSSscanner
 
 class AdvancedScanner:
     def __init__(self, url, max_depth=3, max_urls=100, concurrency=10):
@@ -14,6 +15,7 @@ class AdvancedScanner:
         self.urls_to_visit = asyncio.Queue()
         self.session = None
         self.vulnerabilities = []
+        self.xss_scanner = XSSscanner(self.session,self.visited_urls)
 
     async def create_session(self):
         self.session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False))
@@ -61,8 +63,11 @@ class AdvancedScanner:
                 await self.urls_to_visit.put((link, depth))
 
     async def check_vulnerabilities(self, url, content):
+        self.xss_scanner.session = self.session
+        self.xss_scanner.visited_urls = self.visited_urls
         await asyncio.gather(
-            self.check_xss(url, content),
+            self.xss_scanner.scan(url,content),
+            self.vulnerabilities.extend(self.xss_scanner.vulnerabilities)
             # self.check_sql_injection(url)
             # self.check_open_redirect(url),
             # self.check_ssl(url),
