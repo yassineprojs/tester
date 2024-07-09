@@ -10,7 +10,7 @@ chrome.action.onClicked.addListener((tab) => {
           chrome.scripting.executeScript(
             {
               target: { tabId: tabs[0].id },
-              files: ["assets/content.js"],
+              files: ["content.js"],
             },
             () => {
               if (chrome.runtime.lastError) {

@@ -9,9 +9,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 function injectReactApp() {
-  const overlay = document.createElement("div");
-  overlay.id = "security-analysis-overlay";
-  document.body.appendChild(overlay);
   const script = document.createElement("script");
   script.src = chrome.runtime.getURL("assets/securityAnalysis.js");
   document.body.appendChild(script);
