@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React from "react";
 import { OrbitControls, Gltf, Environment } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
 import { Model } from "./Avatar";
