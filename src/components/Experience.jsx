@@ -1,8 +1,7 @@
 import React from "react";
 import { OrbitControls, Gltf, Environment } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
-import { Model } from "./Avatar";
-
+import Assistant from "./Avatar.jsx";
 export const Experience = () => {
   return (
     <Canvas
@@ -19,7 +18,7 @@ export const Experience = () => {
       <Environment preset="sunset" />
       <ambientLight intensity={0.8} color="pink" />
       <OrbitControls />
-      <Model scale={1.5} />
+      <Assistant scale={1.5} />
       {/* <Gltf src="/models/modelSpeakMove.glb" /> */}
     </Canvas>
   );

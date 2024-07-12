@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
 const Anthropic = require("@anthropic-ai/sdk");
+const textToSpeech = require("./ttsService");
 
 const PORT = 3000;
 
@@ -45,6 +46,21 @@ app.post("/ask-ai", async (req, res) => {
       ],
     });
     res.send(response.content[0].text);
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
+
+app.post("/text-to-speech", async (req, res) => {
+  try {
+    const { text, teacher } = req.body;
+    const { audioStream, visemes } = await textToSpeech(text, teacher);
+
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Disposition", "inline; filename=tts.mp3");
+    res.setHeader("Visemes", JSON.stringify(visemes));
+
+    audioStream.pipe(res);
   } catch (error) {
     res.status(500).send(error.message);
   }

@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import { Experience } from "./Experience";
-import { analyseCurrentPage, askAI } from "../services/aiSetup";
+import { analyseCurrentPage } from "../services/aiSetup";
+import { useAIAssistant } from "../hooks/useAIAssistant";
 
 function SecurityAnalysis() {
   const [result, setResult] = useState("");
   const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
+  const { askAI, messages, currentMessage, loading } = useAIAssistant();
 
   useEffect(() => {
     handleAnalyze();
@@ -24,13 +25,8 @@ function SecurityAnalysis() {
 
   const handleAskAi = async () => {
     if (!question) return;
-    try {
-      const response = await askAI(question, result);
-      setAnswer(response);
-    } catch (error) {
-      console.error("Error", error);
-      setAnswer("Error occured while asking AI");
-    }
+    await askAI(question, result);
+    setQuestion(""); // Clear the question input after asking
   };
 
   return (
@@ -44,8 +40,21 @@ function SecurityAnalysis() {
         onChange={(e) => setQuestion(e.target.value)}
         placeholder="Ask a sueqtion about the security analysis"
       />
-      <button onClick={handleAskAi}>Ask Ai</button>
-      <div>{answer}</div>
+
+      <button onClick={handleAskAi} disabled={loading}>
+        {loading ? "Processing..." : "Ask AI"}
+      </button>
+      {messages.map((message) => (
+        <div key={message.id}>
+          <p>Q: {message.question}</p>
+          <p>A: {message.answer}</p>
+          {message.audioPlayer && (
+            <button onClick={() => message.audioPlayer.play()}>
+              Play Audio
+            </button>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -59,23 +68,3 @@ function render() {
 }
 
 render();
-
-// const analyseCurrentPage = () => {
-//   const url = window.location.href;
-//   // Send a POST request to the local server with the url of the active tab
-//   fetch("http://localhost:3000/security-check", {
-//     method: "POST",
-//     headers: {
-//       "Content-Type": "application/json",
-//     },
-//     body: JSON.stringify({ url: url }),
-//   })
-//     .then((response) => response.json()) //convert the response to JSON
-//     .then((data) => {
-//       setResult(JSON.stringify(data, null, 2));
-//     })
-//     .catch((error) => {
-//       console.error("Error", error);
-//       setResult("Error occured during analysis");
-//     });
-// };
