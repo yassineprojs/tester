@@ -9,66 +9,66 @@ export const useAIAssistant = create((set, get) => ({
 
   setassistant: (assistant) => set({ assistant }),
 
-  askAI: async (question, context) => {
-    if (!question) return;
+  // askAI: async (question, context) => {
+  //   if (!question) return;
 
-    set({ loading: true });
+  //   set({ loading: true });
 
-    try {
-      const answer = await askAI(question, context);
-      const message = { question, answer, id: get().messages.length };
+  //   try {
+  //     const answer = await askAI(question, context);
+  //     const message = { question, answer, id: get().messages.length };
 
-      set((state) => ({
-        messages: [...state.messages, message],
-        currentMessage: message,
-      }));
+  //     set((state) => ({
+  //       messages: [...state.messages, message],
+  //       currentMessage: message,
+  //     }));
 
-      await get().playMessage(message);
-    } catch (error) {
-      console.error("Error asking AI:", error);
-    } finally {
-      set({ loading: false });
-    }
-  },
+  //     await get().playMessage(message);
+  //   } catch (error) {
+  //     console.error("Error asking AI:", error);
+  //   } finally {
+  //     set({ loading: false });
+  //   }
+  // },
 
-  playMessage: async (message) => {
-    set({ currentMessage: message, loading: true });
+  // playMessage: async (message) => {
+  //   set({ currentMessage: message, loading: true });
 
-    if (!message.audioPlayer) {
-      try {
-        const { audioBlob, visemes } = await getTextToSpeech(
-          message.answer,
-          get().assistant
-        );
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audioPlayer = new Audio(audioUrl);
+  //   if (!message.audioPlayer) {
+  //     try {
+  //       const { audioBlob, visemes } = await getTextToSpeech(
+  //         message.answer,
+  //         get().assistant
+  //       );
+  //       const audioUrl = URL.createObjectURL(audioBlob);
+  //       const audioPlayer = new Audio(audioUrl);
 
-        audioPlayer.onended = () => set({ currentMessage: null });
+  //       audioPlayer.onended = () => set({ currentMessage: null });
 
-        message.audioPlayer = audioPlayer;
-        message.visemes = visemes;
+  //       message.audioPlayer = audioPlayer;
+  //       message.visemes = visemes;
 
-        set((state) => ({
-          messages: state.messages.map((m) =>
-            m.id === message.id ? message : m
-          ),
-        }));
-      } catch (error) {
-        console.error("Error getting TTS:", error);
-      } finally {
-        set({ loading: false });
-      }
-    }
+  //       set((state) => ({
+  //         messages: state.messages.map((m) =>
+  //           m.id === message.id ? message : m
+  //         ),
+  //       }));
+  //     } catch (error) {
+  //       console.error("Error getting TTS:", error);
+  //     } finally {
+  //       set({ loading: false });
+  //     }
+  //   }
 
-    message.audioPlayer.currentTime = 0;
-    await message.audioPlayer.play();
-  },
+  //   message.audioPlayer.currentTime = 0;
+  //   await message.audioPlayer.play();
+  // },
 
-  stopMessage: () => {
-    const { currentMessage } = get();
-    if (currentMessage && currentMessage.audioPlayer) {
-      currentMessage.audioPlayer.pause();
-      set({ currentMessage: null });
-    }
-  },
+  // stopMessage: () => {
+  //   const { currentMessage } = get();
+  //   if (currentMessage && currentMessage.audioPlayer) {
+  //     currentMessage.audioPlayer.pause();
+  //     set({ currentMessage: null });
+  //   }
+  // },
 }));

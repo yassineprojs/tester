@@ -2,8 +2,11 @@ import asyncio #For asynchronous programming
 import aiohttp #For making asynchronous HTTP requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse #For URL manipulation
-import re
-from xss import XSSscanner
+from xssSecure import XSSSecurityAnalyzer
+from cookie import CookieSecurityAnalyzer
+from serverLeakage import ServerInfoLeakageDetector
+from sqlSecure import SQLInjectionChecker
+from SSL_TLS import SSLTLSAnalyzer
 
 class AdvancedScanner:
     def __init__(self, url, max_depth=3, max_urls=100, concurrency=10):
@@ -14,11 +17,18 @@ class AdvancedScanner:
         self.visited_urls = set()
         self.urls_to_visit = asyncio.Queue()
         self.session = None
-        self.vulnerabilities = []
-        self.xss_scanner = XSSscanner(self.session,self.visited_urls)
+        self.vulnerabilities=[]
+        self.sql_injection_checker = None
+
 
     async def create_session(self):
         self.session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False))
+        self.xss_scanner = XSSSecurityAnalyzer(self.session)
+        # self.cookie_analyzer = CookieSecurityAnalyzer(self.session)
+        # self.server_leakage_detector = ServerInfoLeakageDetector(self.session)
+        # self.sql_injection_checker = SQLInjectionChecker(self.start_url)
+        # self.ssl_tls_analyzer = SSLTLSAnalyzer(self.session)
+
 
     async def close_session(self):
         if self.session:
@@ -47,7 +57,7 @@ class AdvancedScanner:
                 try:
                     async with self.session.get(url, timeout=10) as response:
                         content = await response.text()
-                        await self.check_vulnerabilities(url, content)
+                        await self.check_vulnerabilities(url, content,response.cookies)
                         if depth < self.max_depth:
                             await self.extract_links(url, content, depth + 1)
                 except Exception as e:
@@ -62,165 +72,26 @@ class AdvancedScanner:
             if link.startswith(self.start_url) and link not in self.visited_urls:
                 await self.urls_to_visit.put((link, depth))
 
-    async def check_vulnerabilities(self, url, content):
-        self.xss_scanner.session = self.session
-        self.xss_scanner.visited_urls = self.visited_urls
-        await asyncio.gather(
-            self.xss_scanner.scan(url,content),
-            self.vulnerabilities.extend(self.xss_scanner.vulnerabilities)
-            # self.check_sql_injection(url)
-            # self.check_open_redirect(url),
-            # self.check_ssl(url),
-            # self.check_headers(url),
-)
+    async def check_vulnerabilities(self, url, content,cookies):
+        # Analyze cookies
+        # cookie_results = await self.cookie_analyzer.analyze(url,cookies)
+        # self.vulnerabilities.append(cookie_results)
+        # xss analysis
+        xss_results = await asyncio.gather(
+        self.xss_scanner.analyze(url, content),
+        )
+        self.vulnerabilities.extend(xss_results)
+        # Server leakage analysis
+    #     server_leakage_results = await self.server_leakage_detector.analyze(url)
+    #     self.vulnerabilities.append(server_leakage_results)
+    #     # SQL Injection analysis
+    #     sql_injection_results = await self.run_sql_injection_check(url)
+    #     self.vulnerabilities.append(sql_injection_results)
+    #     # SSl/TLS analysis
+    #     ssl_tls_results= await self.ssl_tls_analyzer.analyze(url)
+    #     self.vulnerabilities.append(ssl_tls_results)
 
-
-  
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# import requests
-# import re
-# from urllib.parse import urlparse,urljoin
-# from bs4 import BeautifulSoup
-
-# class Scanner:
-#     def __init__(self,url,ignore_links):
-#         self.session = requests.session()
-#         self.target_url = url
-#         self.target_links = set()
-#         self.links_to_ignore = set(ignore_links)
-
-#     # crawler
-#     def extract_links_from(self,url):
-#         try:
-#             response = self.session.get(url)
-#             response.raise_for_status()
-#             return re.findall('(?:href=")(.*?)"', response.text)
-#         except requests.RequestException as e:
-#             print(f"Error fetching {url}: {e}")
-#             return []
-        
-#     def crawl(self,url=None):
-#         url = url or self.target_url
-#         href_links = self.extract_links_from(url)
-#         for link in href_links:
-#             link = urljoin(url, link)
-#             parsed_link = urlparse(link)
-#             link = f"{parsed_link.scheme}://{parsed_link.netloc}{parsed_link.path}"
-#             if self.target_url in link and link not in self.target_links and link not in self.links_to_ignore:
-#                 self.target_links.add(link)
-#                 print(link)
-#                 self.crawl(link)
-
-            
-#     def extract_forms(self, url):
-#         try:
-#             response = self.session.get(url)
-#             response.raise_for_status()
-#             soup = BeautifulSoup(response.text, 'html.parser')
-#             return soup.find_all("form")
-#         except requests.RequestException as e:
-#             print(f"Error fetching {url}: {e}")
-#             return []
-    
-#     def submit_form(self, form, value, url):
-#         action = form.get("action")
-#         post_url = urljoin(url, action)
-#         method = form.get("method", "get").lower()
-#         inputs_list = form.find_all("input")
-#         data = {}
-
-#         for input_field in inputs_list:
-#             name = input_field.get("name")
-#             input_type = input_field.get("type", "text")
-#             if name:
-#                 if input_type == "text":
-#                     data[name] = value
-#                 else:
-#                     data[name] = input_field.get("value", "")
-
-#         try:
-#             if method == "post":
-#                 return self.session.post(post_url, data=data)
-#             return self.session.get(post_url, params=data)
-#         except requests.RequestException as e:
-#             print(f"Error submitting form to {post_url}: {e}")
-#             return None
-    
-#     def run_scanner(self):
-#         vulnerabilities = []
-#         for link in self.target_links:
-#             forms = self.extract_forms(link)
-#             for form in forms:
-#                 print(f"Testing form in {link}")
-#                 is_vulnerable_to_xss = self.test_xss_in_form(form, link)
-#                 if is_vulnerable_to_xss:
-#                     vulnerabilities.append(f"XSS vulnerability in form at {link}")
-
-#             if "=" in link:
-#                 print(f"Testing {link}")
-#                 is_vulnerable_to_xss = self.test_xss_in_link(link)
-#                 if is_vulnerable_to_xss:
-#                     vulnerabilities.append(f"XSS vulnerability in link: {link}")
-
-#         return vulnerabilities
-
-#     def test_xss_in_link(self, url):
-#         xss_test_script = "<sCript>alert('test')</scriPt>"
-#         url = url.replace("=", "=" + xss_test_script)
-#         try:
-#             response = self.session.get(url)
-#             return xss_test_script.lower() in response.text.lower()
-#         except requests.RequestException:
-#             return False
-
-#     def test_xss_in_form(self, form, url):
-#         xss_test_script = "<script>alert('test')</script>"
-#         response = self.submit_form(form, xss_test_script, url)
-#         return response and xss_test_script.lower() in response.text.lower()
-        
+    # async def run_sql_injection_check(self, url):
+    #         self.sql_injection_checker.base_url = url
+    #         self.sql_injection_checker.session = self.session
+    #         return await self.sql_injection_checker.analyze()

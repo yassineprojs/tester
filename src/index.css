@@ -26,4 +26,31 @@ canvas {
   left: 0 !important;
   width: 100% !important;
   height: 100% !important;
+  pointer-events: none !important;
+}
+
+.security-analysis-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2147483646; /* Highest possible z-index */
+}
+
+.security-analysis-ui {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2147483647;
+  padding: 20px;
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.8); /* Semi-transparent background */
+}
+
+.security-analysis-result {
+  max-height: 200px;
+  overflow: auto;
 }

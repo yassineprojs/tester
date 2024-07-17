@@ -7,11 +7,16 @@ import { useAIAssistant } from "../hooks/useAIAssistant";
 function SecurityAnalysis() {
   const [result, setResult] = useState("");
   const [question, setQuestion] = useState("");
+  const [showAnalysis, setShowAnalysis] = useState(true);
   const { askAI, messages, currentMessage, loading } = useAIAssistant();
 
   useEffect(() => {
     handleAnalyze();
   }, []);
+
+  const toggleAnalysis = () => {
+    setShowAnalysis(!showAnalysis);
+  };
 
   const handleAnalyze = async () => {
     try {
@@ -30,31 +35,37 @@ function SecurityAnalysis() {
   };
 
   return (
-    <div style={{ width: "100vw", height: "100vh", overflow: "hidden" }}>
+    <div
+      className="security-analysis-overlay"
+      style={{ display: showAnalysis ? "block" : "none" }}
+    >
       <Experience />
-      <button onClick={handleAnalyze}>Analyze current Page</button>
-      <pre>{result}</pre>
-      <input
-        type="text"
-        value={question}
-        onChange={(e) => setQuestion(e.target.value)}
-        placeholder="Ask a sueqtion about the security analysis"
-      />
+      <div className="security-analysis-ui">
+        <button onClick={handleAnalyze}>Analyze current Page</button>
+        <button onClick={toggleAnalysis}>Toggle Analysis</button>
+        <pre className="security-analysis-result">{result}</pre>
+        <input
+          type="text"
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          placeholder="Ask a question about the security analysis"
+        />
 
-      <button onClick={handleAskAi} disabled={loading}>
-        {loading ? "Processing..." : "Ask AI"}
-      </button>
-      {messages.map((message) => (
-        <div key={message.id}>
-          <p>Q: {message.question}</p>
-          <p>A: {message.answer}</p>
-          {message.audioPlayer && (
-            <button onClick={() => message.audioPlayer.play()}>
-              Play Audio
-            </button>
-          )}
-        </div>
-      ))}
+        {/* <button onClick={handleAskAi} disabled={loading}>
+          {loading ? "Processing..." : "Ask AI"}
+        </button>
+        {messages.map((message) => (
+          <div key={message.id}>
+            <p>Q: {message.question}</p>
+            <p>A: {message.answer}</p>
+            {message.audioPlayer && (
+              <button onClick={() => message.audioPlayer.play()}>
+                Play Audio
+              </button>
+            )}
+          </div>
+        ))} */}
+      </div>
     </div>
   );
 }

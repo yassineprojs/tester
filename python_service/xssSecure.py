@@ -1,39 +1,35 @@
 import requests
 from bs4 import BeautifulSoup
 import re
-from urllib.parse import urljoin,urlparse
+from urllib.parse import urljoin,urlparse,parse_qs
+import json
 
 class XSSSecurityAnalyzer:
     def __init__(self, url):
-        self.url = url
         self.session = requests.Session()
         self.findings = []
+        self.vulnerabilities = []
+        self.visited_urls = set()
         self.score = 0
 
-    def analyze(self):
-        try:
-            response = self.session.get(self.url)
-            response.raise_for_status()
-        except requests.RequestException as e:
-            return f"Error accessing the website: {str(e)}"
-
-        self.check_headers(response.headers)
-        self.analyze_content(response.text)
-        self.check_forms(response.text)
-
+    async def analyze(self, url, content):
+        self.url = url
+        self.check_headers(self.session.headers)
+        self.analyze_content(content)
+        self.check_forms(content)
+        await self.check_reflected_xss(url, content)
         return self.generate_report()
     
     # checking for header:
-
     def check_headers(self, headers):
         self._check_content_security_policy(headers)
-        self._check_x_xss_protection(headers)
         self._check_strict_transport_security(headers)
         self._check_x_frame_options(headers)
         self._check_x_content_type_options(headers)
         self._check_referrer_policy(headers)
         self._check_feature_policy(headers)
 
+    # prevent xss attacks
     def _check_content_security_policy(self, headers):
         csp = headers.get('Content-Security-Policy')
         if csp:
@@ -61,16 +57,8 @@ class XSSSecurityAnalyzer:
                     self.score += 1
                     self.findings.append("CSP properly restricts script sources")
 
-    def _check_x_xss_protection(self, headers):
-        xss_protection = headers.get('X-XSS-Protection')
-        if xss_protection:
-            self.findings.append("X-XSS-Protection header present (note: deprecated in modern browsers)")
-            if xss_protection == '1; mode=block':
-                self.score += 0.5
-                self.findings.append("X-XSS-Protection set to block mode")
-        else:
-            self.findings.append("X-XSS-Protection header missing - not crucial for modern browsers")
 
+    # tells browsers to only connect to the server over HTTPS, helping to prevent man-in-the-middle attacks.
     def _check_strict_transport_security(self, headers):
         hsts = headers.get('Strict-Transport-Security')
         if hsts:
@@ -93,6 +81,7 @@ class XSSSecurityAnalyzer:
         else:
             self.findings.append("HSTS header missing - consider implementing")
 
+    # protect against clickjacking attacks
     def _check_x_frame_options(self, headers):
         x_frame_options = headers.get('X-Frame-Options')
         if x_frame_options:
@@ -104,6 +93,7 @@ class XSSSecurityAnalyzer:
         else:
             self.findings.append("X-Frame-Options header missing - consider implementing to prevent clickjacking")
 
+    # prevent browsers from MIME-sniffing a response away from the declared content-type
     def _check_x_content_type_options(self, headers):
         x_content_type_options = headers.get('X-Content-Type-Options')
         if x_content_type_options:
@@ -115,6 +105,7 @@ class XSSSecurityAnalyzer:
         else:
             self.findings.append("X-Content-Type-Options header missing - consider implementing to prevent MIME type sniffing")
 
+    # controls how much referrer information is included with requests, helping to reduce leakage of browsing information.
     def _check_referrer_policy(self, headers):
         referrer_policy = headers.get('Referrer-Policy')
         if referrer_policy:
@@ -126,6 +117,7 @@ class XSSSecurityAnalyzer:
         else:
             self.findings.append("Referrer-Policy header missing - consider implementing to control referrer information")
 
+    # allows a site to control which features and APIs can be used in the browser
     def _check_feature_policy(self, headers):
         feature_policy = headers.get('Feature-Policy') or headers.get('Permissions-Policy')
         if feature_policy:
@@ -135,8 +127,6 @@ class XSSSecurityAnalyzer:
         else:
             self.findings.append("Feature-Policy/Permissions-Policy header missing - consider implementing to control browser features")
 
-
-    # ///////////////////////////////////
 
     def analyze_content(self, content):
         soup = BeautifulSoup(content, 'html.parser')
@@ -153,6 +143,8 @@ class XSSSecurityAnalyzer:
             r'eval\s*\(': "Usage of eval() detected - potential security risk",
             r'innerHTML\s*=': "Direct manipulation of innerHTML detected - potential XSS risk",
             r'on\w+\s*=': "Inline event handlers detected - consider using addEventListener",
+            r'setTimeout\s*\(\s*[\'"`]': "Potentially unsafe use of setTimeout with string argument",
+            r'setInterval\s*\(\s*[\'"`]': "Potentially unsafe use of setInterval with string argument",
         }
 
         for pattern, message in unsafe_js_patterns.items():
@@ -164,9 +156,42 @@ class XSSSecurityAnalyzer:
         if re.search(r"<[^>]*>.*&lt;script&gt;", content):
             self.score += 1
             self.findings.append("Evidence of HTML encoding in output - good practice")
+
+    async def check_reflected_xss(self, url, content):
+        payloads = self.generate_payloads()
         
+        # Check URL parameters
+        parsed_url = urlparse(url)
+        params = parse_qs(parsed_url.query)
+        for param, values in params.items():
+            for payload in payloads:
+                test_url = url.replace(f"{param}={values[0]}", f"{param}={payload}")
+                async with self.session.get(test_url) as response:
+                    response_text = await response.text()
+                    if payload in response_text:
+                        self.vulnerabilities.append(f"Reflected XSS found in URL parameter {param} at {url}")
+
+        # Check form inputs
+        soup = BeautifulSoup(content, "html.parser")
+        forms = soup.find_all("form")
+        for form in forms:
+            await self.check_form_xss(url, form, payloads)
+        
+    def check_form_xss(self,url,form,payloads):
+        action = urljoin(url,form.get("action",''))
+        method = form.get('method','get').lower()
+        for payload in payloads:
+            data = {input.get('name'): payload for input in form.find_all('input') if input.get('name')}
+            if method == 'post':
+                with self.session.post(action,data=data) as response:
+                    response_text =  response.text()
+            else:
+                with self.session.get(action, params = data)as response:
+                    response_text =  response.text()
+        if payload in response_text:
+            self.vulnerabilities.append(f"Reflected XSS ound in form at {url}")
+            return 
  
-# /////////////////////////////////////////////////////
     def check_forms(self, content):
         soup = BeautifulSoup(content, 'html.parser')
         forms = soup.find_all('form')
@@ -182,28 +207,18 @@ class XSSSecurityAnalyzer:
         elif self.score == 1:
             overall_assessment = "Some XSS protection, but improvements needed"
 
-        return {
+        self.vulnerabilities.append({
             "url": self.url,
             "score": self.score,
             "findings": self.findings,
             "overall_assessment": overall_assessment
-        }
+        })
 
-def main():
-    url = input("Enter the URL to analyze: ")
-    analyzer = XSSSecurityAnalyzer(url)
-    report = analyzer.analyze()
-    
-    print("\nXSS Security Analysis Report")
-    print("============================")
-    print(f"URL: {report['url']}")
-    print(f"Score: {report['score']}")
-    print("\nFindings:")
-    for finding in report['findings']:
-        print(f"- {finding}")
-    print(f"\nOverall Assessment: {report['overall_assessment']}")
-    print("\nNote: This is a basic assessment and not a comprehensive security audit.")
-    print("Always consult with professional security experts for thorough evaluations.")
-
-if __name__ == "__main__":
-    main()
+    def generate_payloads(self):
+        return [
+            "<script>alert('XSS')</script>",
+            "javascript:alert('XSS')",
+            "<img src=x onerror=alert('XSS')>",
+            "<svg onload=alert('XSS')>",
+            "'-alert('XSS')-'"
+        ]

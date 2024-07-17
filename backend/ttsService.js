@@ -1,7 +1,7 @@
 const sdk = require("microsoft-cognitiveservices-speech-sdk");
 const { PassThrough } = require("stream");
 
-export async function textToSpeech(text, teacher = "Ava") {
+async function textToSpeech(text, teacher = "Ava") {
   const speechConfig = sdk.SpeechConfig.fromSubscription(
     process.env.SPEECH_KEY,
     process.env.SPEECH_REGION
@@ -31,3 +31,5 @@ export async function textToSpeech(text, teacher = "Ava") {
     );
   });
 }
+
+module.exports = { textToSpeech };
