@@ -1,13 +1,15 @@
 import React, { useRef } from "react";
-import { useGLTF } from "@react-three/drei";
+import { Gltf, useGLTF } from "@react-three/drei";
 import { MathUtils } from "three";
 import { useFrame } from "@react-three/fiber";
-import { useAIAssistant } from "../hooks/useAIAssistant";
+// import { useAIAssistant } from "../hooks/useAIAssistant";
 
 export default function Assistant({ ...props }) {
-  const { scene } = useGLTF(chrome.runtime.getURL("models/modelSpeakMove.glb"));
+  <Gltf src="/models/modelSpeakMove.glb" />;
+  // const { scene } = useGLTF("/models/modelSpeakMove.glb");
+
   // const { currentMessage } = useAIAssistant();
-  const meshRef = useRef();
+  // const meshRef = useRef();
 
   // const lerpMorphTarget = (target, value, speed = 0.1) => {
   //   scene.traverse((child) => {
@@ -45,7 +47,7 @@ export default function Assistant({ ...props }) {
   //   }
   // });
 
-  return <primitive object={scene} ref={meshRef} {...props} />;
+  // return <primitive object={scene} {...props} />;
 }
 
-useGLTF.preload(chrome.runtime.getURL("models/modelSpeakMove.glb"));
+// useGLTF.preload("models/modelSpeakMove.glb");

@@ -1,18 +1,5 @@
 const API_URL = "http://localhost:3000";
 
-export const analyseCurrentPage = async () => {
-  const url = window.location.href;
-  // Send a POST request to the local server with the url of the active tab
-  const response = await fetch(`${API_URL}/security-check`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ url }),
-  });
-  return response.json();
-};
-
 export const askAI = async (question, context) => {
   const response = await fetch(`${API_URL}/ask-ai`, {
     method: "POST",

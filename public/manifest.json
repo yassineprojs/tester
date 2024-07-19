@@ -3,7 +3,7 @@
   "name": "Security Analysis Extension",
   "version": "1.0",
   "description": "Provides real-time security analysis while browsing.",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "notifications", "storage"],
   "host_permissions": ["<all_urls>"],
   "icons": {
     "16": "images/icon-16.png",
@@ -11,7 +11,8 @@
     "128": "images/icon-128.png"
   },
   "background": {
-    "service_worker": "assets/background.js"
+    "service_worker": "assets/background.js",
+    "type": "module"
   },
   "content_scripts": [
     {
@@ -19,11 +20,19 @@
       "js": ["assets/content.js"]
     }
   ],
-  "action": {},
+
   "web_accessible_resources": [
     {
-      "resources": ["assets/securityAnalysis.js", "models/modelSpeakMove.glb"],
+      "resources": [
+        "assets/securityAnalysis.js",
+        "models/modelSpeakMove.glb",
+        "index.html"
+      ],
       "matches": ["<all_urls>"]
     }
-  ]
+  ],
+  "action": {},
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  }
 }

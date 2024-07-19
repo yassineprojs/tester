@@ -1,55 +1,84 @@
 import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import { Experience } from "./Experience";
-import { analyseCurrentPage } from "../services/aiSetup";
-import { useAIAssistant } from "../hooks/useAIAssistant";
+// import { useAIAssistant } from "../hooks/useAIAssistant";
 
 function SecurityAnalysis() {
-  const [result, setResult] = useState("");
-  const [question, setQuestion] = useState("");
-  const [showAnalysis, setShowAnalysis] = useState(true);
-  const { askAI, messages, currentMessage, loading } = useAIAssistant();
+  // const [result, setResult] = useState("");
+  // const [question, setQuestion] = useState("");
+  // const { askAI, messages, currentMessage, loading } = useAIAssistant();
+
+  // useEffect(() => {
+  //   handleAnalyze();
+  // }, []);
+
+  // const handleAnalyze = async () => {
+  //   try {
+  //     const data = await analyseCurrentPage();
+  //     setResult(JSON.stringify(data, null, 2));
+  //   } catch (error) {
+  //     console.error("Error", error);
+  //     setResult("Error occured durin analysis");
+  //   }
+  // };
+
+  // const handleAskAi = async () => {
+  //   if (!question) return;
+  //   await askAI(question, result);
+  //   setQuestion(""); // Clear the question input after asking
+  // };
+  const [analysisResult, setAnalysisResult] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    handleAnalyze();
+    const handleAnalysisComplete = (message) => {
+      if (message.action === "analysisComplete") {
+        setAnalysisResult(message.result);
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(handleAnalysisComplete);
+
+    if (chrome && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(["analysisResult"], (result) => {
+        if (result.analysisResult) {
+          setAnalysisResult(result.analysisResult);
+        } else {
+          setError("No analysis result found. Please run the analysis first.");
+        }
+      });
+    } else {
+      setError(
+        "Chrome storage is not available. Are you running this in a browser extension context?"
+      );
+    }
+
+    return () => {
+      chrome.runtime.onMessage.removeListener(handleAnalysisComplete);
+    };
   }, []);
 
-  const toggleAnalysis = () => {
-    setShowAnalysis(!showAnalysis);
-  };
-
-  const handleAnalyze = async () => {
-    try {
-      const data = await analyseCurrentPage();
-      setResult(JSON.stringify(data, null, 2));
-    } catch (error) {
-      console.error("Error", error);
-      setResult("Error occured durin analysis");
-    }
-  };
-
-  const handleAskAi = async () => {
-    if (!question) return;
-    await askAI(question, result);
-    setQuestion(""); // Clear the question input after asking
-  };
-
   return (
-    <div
-      className="security-analysis-overlay"
-      style={{ display: showAnalysis ? "block" : "none" }}
-    >
+    <div className="security-analysis-overlay">
       <Experience />
       <div className="security-analysis-ui">
-        <button onClick={handleAnalyze}>Analyze current Page</button>
-        <button onClick={toggleAnalysis}>Toggle Analysis</button>
-        <pre className="security-analysis-result">{result}</pre>
-        <input
+        {/* <button onClick={handleAnalyze}>Analyze current Page</button> */}
+        {/* <pre className="security-analysis-result">{result}</pre> */}
+        {error ? (
+          <div className="error-message">{error}</div>
+        ) : (
+          <pre className="security-analysis-result">
+            {analysisResult
+              ? JSON.stringify(analysisResult, null, 2)
+              : "Loading..."}
+          </pre>
+        )}
+        {/* <input
           type="text"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           placeholder="Ask a question about the security analysis"
-        />
+        /> */}
 
         {/* <button onClick={handleAskAi} disabled={loading}>
           {loading ? "Processing..." : "Ask AI"}
@@ -70,12 +99,4 @@ function SecurityAnalysis() {
   );
 }
 
-function render() {
-  const root = document.createElement("div");
-  root.id = "security-analysis-root";
-  document.body.appendChild(root);
-  const reactRoot = ReactDOM.createRoot(root);
-  reactRoot.render(React.createElement(SecurityAnalysis));
-}
-
-render();
+export default SecurityAnalysis;

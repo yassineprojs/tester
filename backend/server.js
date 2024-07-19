@@ -24,9 +24,28 @@ app.post("/security-check", async (req, res) => {
     res.json(response.data);
   } catch (error) {
     console.error("Error:", error);
+    if (error.response) {
+      // The request was made and the server responded with a status code
+      // that falls out of the range of 2xx
+      console.error(error.response.data);
+      console.error(error.response.status);
+      console.error(error.response.headers);
+    } else if (error.request) {
+      // The request was made but no response was received
+      console.error(error.request);
+    } else {
+      // Something happened in setting up the request that triggered an Error
+      console.error("Error", error.message);
+    }
     res
       .status(500)
-      .json({ error: "An error occurred", details: error.message });
+      .json({
+        error: "An error occurred",
+        details: error.message,
+        additionalInfo: error.response
+          ? error.response.data
+          : "No additional info",
+      });
   }
 });
 

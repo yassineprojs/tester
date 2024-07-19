@@ -9,6 +9,7 @@ const __dirname = path.dirname(__filename);
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  root: ".",
   build: {
     outDir: "dist",
     rollupOptions: {
@@ -19,6 +20,7 @@ export default defineConfig({
           __dirname,
           "src/components/securityAnalysis.jsx"
         ),
+        main: path.resolve(__dirname, "index.html"),
       },
       output: {
         entryFileNames: `assets/[name].js`,
@@ -32,5 +34,4 @@ export default defineConfig({
   define: {
     "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV),
   },
-  publicDir: "public",
 });

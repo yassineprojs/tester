@@ -5,8 +5,8 @@ from urllib.parse import urljoin,urlparse,parse_qs
 import json
 
 class XSSSecurityAnalyzer:
-    def __init__(self, url):
-        self.session = requests.Session()
+    def __init__(self, session):
+        self.session = session
         self.findings = []
         self.vulnerabilities = []
         self.visited_urls = set()
@@ -21,13 +21,15 @@ class XSSSecurityAnalyzer:
         return self.generate_report()
     
     # checking for header:
-    def check_headers(self, headers):
-        self._check_content_security_policy(headers)
-        self._check_strict_transport_security(headers)
-        self._check_x_frame_options(headers)
-        self._check_x_content_type_options(headers)
-        self._check_referrer_policy(headers)
-        self._check_feature_policy(headers)
+    async def check_headers(self, headers):
+        async with self.session.get(self.url) as response:
+            headers = response.headers
+            self._check_content_security_policy(headers)
+            self._check_strict_transport_security(headers)
+            self._check_x_frame_options(headers)
+            self._check_x_content_type_options(headers)
+            self._check_referrer_policy(headers)
+            self._check_feature_policy(headers)
 
     # prevent xss attacks
     def _check_content_security_policy(self, headers):
@@ -177,20 +179,16 @@ class XSSSecurityAnalyzer:
         for form in forms:
             await self.check_form_xss(url, form, payloads)
         
-    def check_form_xss(self,url,form,payloads):
+    async def check_form_xss(self,url,form,payloads):
         action = urljoin(url,form.get("action",''))
         method = form.get('method','get').lower()
         for payload in payloads:
             data = {input.get('name'): payload for input in form.find_all('input') if input.get('name')}
-            if method == 'post':
-                with self.session.post(action,data=data) as response:
-                    response_text =  response.text()
-            else:
-                with self.session.get(action, params = data)as response:
-                    response_text =  response.text()
-        if payload in response_text:
-            self.vulnerabilities.append(f"Reflected XSS ound in form at {url}")
-            return 
+            async with self.session.request(method, action, data=data if method == 'post' else None, params=data if method == 'get' else None) as response:
+                response_text = await response.text()
+            if payload in response_text:
+                self.vulnerabilities.append(f"Reflected XSS ound in form at {url}")
+                return 
  
     def check_forms(self, content):
         soup = BeautifulSoup(content, 'html.parser')

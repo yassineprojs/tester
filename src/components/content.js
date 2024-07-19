@@ -1,31 +1,8 @@
-let injected = false;
+console.log("Content script loaded"); // In content.js
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === "toggleAnalysis") {
-    if (!injected) {
-      injectReactApp();
-      injected = true;
-    } else {
-      toggleAnalysisVisibility();
-    }
-    sendResponse({ status: "success" });
+  if (message.action === "getPageUrl") {
+    sendResponse({ url: window.location.href });
   }
   return true;
 });
-
-function injectReactApp() {
-  const script = document.createElement("script");
-  script.src = chrome.runtime.getURL("assets/securityAnalysis.js");
-  script.onload = () => {
-    script.remove(); // remove the script element after it has loaded
-  };
-  (document.head || document.documentElement).appendChild(script);
-}
-
-function toggleAnalysisVisibility() {
-  const analysisRoot = document.getElementById("security-analysis-root");
-  if (analysisRoot) {
-    analysisRoot.style.display =
-      analysisRoot.style.display === "none" ? "block" : "none";
-  }
-}

@@ -19,6 +19,8 @@ class AdvancedScanner:
         self.session = None
         self.vulnerabilities=[]
         self.sql_injection_checker = None
+        self.xss_scanner = None
+
 
 
     async def create_session(self):
@@ -77,9 +79,7 @@ class AdvancedScanner:
         # cookie_results = await self.cookie_analyzer.analyze(url,cookies)
         # self.vulnerabilities.append(cookie_results)
         # xss analysis
-        xss_results = await asyncio.gather(
-        self.xss_scanner.analyze(url, content),
-        )
+        xss_results = await self.xss_scanner.analyze(url, content)
         self.vulnerabilities.extend(xss_results)
         # Server leakage analysis
     #     server_leakage_results = await self.server_leakage_detector.analyze(url)
