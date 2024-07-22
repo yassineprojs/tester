@@ -14,7 +14,6 @@ logging.basicConfig(level=logging.DEBUG)
 async def analyse():
     data = await request.get_json()
     url = data.get('url','')
-    # result = f"Analysed url:{url}"
     try:
         result = await analyze_security(url)
         return jsonify({"result": result})
@@ -29,11 +28,14 @@ async def analyze_security(url):
         vuln_scanner = AdvancedScanner(url)
         await vuln_scanner.crawl()
         
-        return {
+        result ={
             "url": url,
-            "vulnerabilities": vuln_scanner.vulnerabilities,
-            "scanned_pages": list(vuln_scanner.visited_urls)
+            "scanned_pages": list(vuln_scanner.visited_urls),
+            "scan_results": vuln_scanner.scan_results,
+            "total_score": vuln_scanner.total_score
         }
+        return result
+
    
     except Exception as e:
         logging.error(f"Error in analyze_security: {str(e)}")

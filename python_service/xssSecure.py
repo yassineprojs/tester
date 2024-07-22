@@ -10,11 +10,14 @@ class XSSSecurityAnalyzer:
         self.findings = []
         self.vulnerabilities = []
         self.visited_urls = set()
-        self.score = 0
+        self.total_score = 0
+        self.scans = []
 
     async def analyze(self, url, content):
         self.url = url
-        self.check_headers(self.session.headers)
+        self.findings = []  # Reset findings for each new URL
+        self.score = 0  # Reset score for each new URL
+        await self.check_headers(self.session.headers)
         self.analyze_content(content)
         self.check_forms(content)
         await self.check_reflected_xss(url, content)
@@ -136,7 +139,7 @@ class XSSSecurityAnalyzer:
         # Check for inline scripts
         inline_scripts = soup.find_all('script', src=False)
         if inline_scripts:
-            self.findings.append(f"Inline scripts detected ({len(inline_scripts)}) - consider moving to external files")
+            self.findings.append(f"Inline scripts detected - consider moving to external files")
             self.score -= len(inline_scripts)
 
         # Check for unsafe JavaScript practices
@@ -187,7 +190,7 @@ class XSSSecurityAnalyzer:
             async with self.session.request(method, action, data=data if method == 'post' else None, params=data if method == 'get' else None) as response:
                 response_text = await response.text()
             if payload in response_text:
-                self.vulnerabilities.append(f"Reflected XSS ound in form at {url}")
+                self.vulnerabilities.append(f"Reflected XSS found in form at {url}")
                 return 
  
     def check_forms(self, content):
@@ -198,19 +201,7 @@ class XSSSecurityAnalyzer:
             if not form.find('input', attrs={'type': 'hidden', 'name': re.compile(r'csrf', re.I)}):
                 self.findings.append(f"Form {form.get('id', 'unknown')} lacks CSRF token - potential XSS risk")
 
-    def generate_report(self):
-        overall_assessment = "Weak XSS protection - improvements recommended"
-        if self.score >= 2:
-            overall_assessment = "Good XSS protection measures in place"
-        elif self.score == 1:
-            overall_assessment = "Some XSS protection, but improvements needed"
-
-        self.vulnerabilities.append({
-            "url": self.url,
-            "score": self.score,
-            "findings": self.findings,
-            "overall_assessment": overall_assessment
-        })
+    
 
     def generate_payloads(self):
         return [
@@ -220,3 +211,22 @@ class XSSSecurityAnalyzer:
             "<svg onload=alert('XSS')>",
             "'-alert('XSS')-'"
         ]
+    
+    def generate_report(self):
+            overall_assessment = "Weak XSS protection - improvements recommended"
+            if self.score >= 2:
+                overall_assessment = "Good XSS protection measures in place"
+            elif self.score == 1:
+                overall_assessment = "Some XSS protection, but improvements needed"
+
+            scan_result = {
+                "url": self.url,
+                "score": self.score,
+                "findings": self.findings,
+                "overall_assessment": overall_assessment,
+                "vulnerabilities": self.vulnerabilities,
+            }
+            self.scans.append(scan_result)
+            self.total_score += self.score
+            return scan_result
+   

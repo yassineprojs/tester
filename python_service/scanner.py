@@ -20,12 +20,17 @@ class AdvancedScanner:
         self.vulnerabilities=[]
         self.sql_injection_checker = None
         self.xss_scanner = None
+        self.cookie_scanner = None
+        self.scan_results = []
+        self.total_score = 0
+
 
 
 
     async def create_session(self):
         self.session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False))
         self.xss_scanner = XSSSecurityAnalyzer(self.session)
+        self.cookie_scanner = CookieSecurityAnalyzer(self.session)
         # self.cookie_analyzer = CookieSecurityAnalyzer(self.session)
         # self.server_leakage_detector = ServerInfoLeakageDetector(self.session)
         # self.sql_injection_checker = SQLInjectionChecker(self.start_url)
@@ -55,16 +60,22 @@ class AdvancedScanner:
             if url not in self.visited_urls and len(self.visited_urls) < self.max_urls:
                 self.visited_urls.add(url)
                 print(f"Scanning: {url}")
-
                 try:
                     async with self.session.get(url, timeout=10) as response:
                         content = await response.text()
-                        await self.check_vulnerabilities(url, content,response.cookies)
+                        xss_results = await self.xss_scanner.analyze(url, content)
+                        self.scan_results.append({
+                            "url": url,
+                            "scan_type": "XSS",
+                            "score": xss_results.get('score', 0),
+                            "findings": xss_results.get('findings', []),
+                            "vulnerabilities": xss_results.get('vulnerabilities', [])
+                        })
+                        self.total_score += xss_results.get('score', 0)
                         if depth < self.max_depth:
                             await self.extract_links(url, content, depth + 1)
                 except Exception as e:
                     print(f"Error processing {url}: {e}")
-
             self.urls_to_visit.task_done()
 
     async def extract_links(self, base_url, content, depth):

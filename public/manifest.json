@@ -31,8 +31,5 @@
       "matches": ["<all_urls>"]
     }
   ],
-  "action": {},
-  "chrome_url_overrides": {
-    "newtab": "index.html"
-  }
+  "action": {}
 }

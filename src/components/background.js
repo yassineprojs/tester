@@ -57,15 +57,12 @@ function startAnalysis(tab) {
 
           chrome.storage.local.set({ analysisResult: result }, () => {
             analysisInProgress = false;
-            chrome.runtime.sendMessage({
-              action: "analysisComplete",
-              result: result,
-            });
+            chrome.tabs.create({ url: chrome.runtime.getURL("index.html") });
             chrome.notifications.create("analysis-complete", {
               type: "basic",
               title: "Security Analysis Complete",
               iconUrl: iconUrl,
-              message: "Click to view the results",
+              message: "Results are now available in a new tab",
               priority: 2,
             });
           });
