@@ -3,10 +3,13 @@ from urllib.parse import urlparse
 import re
 from datetime import datetime, timedelta
 
+
 class CookieSecurityAnalyzer:
     def __init__(self, session):
         self.session = session
         self.results = {}
+        self.url = None
+
 
     async def analyze(self,url,cookies):
         self.url = url
@@ -16,12 +19,12 @@ class CookieSecurityAnalyzer:
         }
 
         for cookie in cookies:
-            cookie_info = self.analyze_cookie(cookie)
+            cookie_info =await self.analyze_cookie(cookie)
             results['cookies'].append(cookie_info)
             results['security_score'] += self.get_security_score(cookie_info)
         return results
 
-    def analyze_cookie(self, cookie):
+    async def analyze_cookie(self, cookie):
         cookie_info = {
             'name': cookie.key,
             'domain': cookie.get('domain', 'Not Set'),
@@ -34,13 +37,13 @@ class CookieSecurityAnalyzer:
             'warnings': []
         }
 
-        self.check_secure_flag(cookie_info)
-        self.check_httponly_flag(cookie_info)
-        self.check_samesite(cookie_info)
-        self.check_expiration(cookie_info)
-        self.check_path(cookie_info)
-        self.check_domain(cookie_info)
-        self.check_for_sensitive_data(cookie_info)
+        await self.check_secure_flag(cookie_info)
+        await self.check_httponly_flag(cookie_info)
+        await self.check_samesite(cookie_info)
+        await self.check_expiration(cookie_info)
+        await self.check_path(cookie_info)
+        await self.check_domain(cookie_info)
+        await self.check_for_sensitive_data(cookie_info)
         return cookie_info
 
 
@@ -53,21 +56,21 @@ class CookieSecurityAnalyzer:
             return datetime.fromtimestamp(cookie.expires).isoformat()
         return 'Session Cookie'
 
-    def check_secure_flag(self, cookie_info):
+    async def check_secure_flag(self, cookie_info):
         if not cookie_info['secure']:
             cookie_info['warnings'].append("Cookie is not marked as Secure")
 
-    def check_httponly_flag(self, cookie_info):
+    async def check_httponly_flag(self, cookie_info):
         if not cookie_info['httponly']:
             cookie_info['warnings'].append("Cookie is not marked as HttpOnly")
 
-    def check_samesite(self, cookie_info):
+    async def check_samesite(self, cookie_info):
         if cookie_info['samesite'] == 'Not Set':
             cookie_info['warnings'].append("SameSite attribute is not set")
         elif cookie_info['samesite'].lower() not in ['strict', 'lax', 'none']:
             cookie_info['warnings'].append(f"Invalid SameSite value: {cookie_info['samesite']}")
 
-    def check_expiration(self, cookie_info):
+    async def check_expiration(self, cookie_info):
         if cookie_info['expires'] != 'Session Cookie':
             try:
                 expires = datetime.fromisoformat(cookie_info['expires'])
@@ -76,11 +79,11 @@ class CookieSecurityAnalyzer:
             except ValueError:
                 cookie_info['warnings'].append("Invalid expiration date format")
 
-    def check_path(self, cookie_info):
+    async def check_path(self, cookie_info):
         if cookie_info['path'] == '/' or cookie_info['path'] == '':
             cookie_info['warnings'].append("Cookie path is set to root, which may be overly broad")
 
-    def check_domain(self, cookie_info):
+    async def check_domain(self, cookie_info):
         domain = urlparse(self.url).netloc
         if cookie_info['domain'].startswith('.'):
             if not domain.endswith(cookie_info['domain'][1:]):
@@ -89,7 +92,7 @@ class CookieSecurityAnalyzer:
             cookie_info['warnings'].append("Cookie domain does not match the current domain")
 
 
-    def check_for_sensitive_data(self, cookie_info):
+    async def check_for_sensitive_data(self, cookie_info):
         sensitive_patterns = [
             r'\bpassword\b',
             r'\bsessid\b',

@@ -9,7 +9,6 @@ app = cors(app)
 logging.basicConfig(level=logging.DEBUG)
 
 
-
 @app.route('/analyse', methods=['POST'])
 async def analyse():
     data = await request.get_json()

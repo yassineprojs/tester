@@ -1,7 +1,7 @@
-import requests
+import aiohttp
+import asyncio
 import re
 from urllib.parse import urlparse
-import socket
 
 class ServerInfoLeakageDetector:
     def __init__(self, session):
@@ -13,14 +13,17 @@ class ServerInfoLeakageDetector:
             'leakage_score': 0
         }
 
+
     async def analyze(self,url):
+        self.url = url
         try:
             async with self.session.get(url, allow_redirects=True, timeout=10) as response:
                 self.analyze_headers(response.headers)
-                self.analyze_content(response.text)
-                self.analyze_error_pages()
-                self.perform_banner_grabbing()
-                self.check_dns_info()
+                content = await response.text()
+                self.analyze_content(content)
+                await self.analyze_error_pages()
+                await self.perform_banner_grabbing()
+                await self.check_dns_info()
                 self.calculate_leakage_score()
         except Exception as e:
             self.results['error'] = f"Request Error: {str(e)}"
@@ -66,7 +69,7 @@ class ServerInfoLeakageDetector:
                 self.results['server_info'][key] = matches
                 self.add_warning(f"Potential information leakage: {key}")
 
-    def analyze_error_pages(self):
+    async def analyze_error_pages(self):
         error_urls = [
             f"{self.url}/nonexistent_page_12345",
             f"{self.url}/index.php?id='",
@@ -75,37 +78,59 @@ class ServerInfoLeakageDetector:
 
         for url in error_urls:
             try:
-                response = requests.get(url, allow_redirects=False, timeout=5)
-                if response.status_code in [404, 500]:
-                    self.analyze_content(response.text)
-            except requests.RequestException:
+                async with self.session.get(url, allow_redirects=False, timeout=5) as response:
+                    if response.status in [404, 500]:
+                        content = await response.text()
+                        self.analyze_content(content)
+            except aiohttp.ClientError:
                 pass
 
-    def perform_banner_grabbing(self):
+    async def perform_banner_grabbing(self):
         parsed_url = urlparse(self.url)
         try:
-            with socket.create_connection((parsed_url.hostname, parsed_url.port or 80), timeout=5) as sock:
-                sock.send(b"HEAD / HTTP/1.0\r\nHost: " + parsed_url.hostname.encode() + b"\r\n\r\n")
-                banner = sock.recv(1024).decode('utf-8', errors='ignore')
-                self.results['server_info']['Banner'] = banner.strip()
-                if 'Server:' in banner:
-                    self.add_warning("Server software version exposed in banner")
-        except (socket.error, socket.timeout):
+            reader, writer = await asyncio.open_connection(parsed_url.hostname, parsed_url.port or 80)
+            writer.write(f"HEAD / HTTP/1.0\r\nHost: {parsed_url.hostname}\r\n\r\n".encode())
+            await writer.drain()
+            banner = await reader.read(1024)
+            writer.close()
+            await writer.wait_closed()
+            
+            banner_str = banner.decode('utf-8', errors='ignore').strip()
+            
+            # Parse the banner
+            lines = banner_str.split('\r\n')
+            parsed_banner = {
+                'Status': lines[0] if lines else 'Unknown',
+                'Headers': {}
+            }
+            for line in lines[1:]:
+                if ': ' in line:
+                    key, value = line.split(': ', 1)
+                    parsed_banner['Headers'][key] = value
+            
+            self.results['server_info']['Banner'] = parsed_banner
+            
+            if 'Server' in parsed_banner['Headers']:
+                self.add_warning(f"Server software version exposed: {parsed_banner['Headers']['Server']}")
+        except (asyncio.TimeoutError, ConnectionRefusedError):
             pass
 
-    def check_dns_info(self):
+    async def check_dns_info(self):
         parsed_url = urlparse(self.url)
         try:
-            ip = socket.gethostbyname(parsed_url.hostname)
+            ip_addresses = await asyncio.get_event_loop().getaddrinfo(
+                parsed_url.hostname, None
+            )
+            ip = ip_addresses[0][4][0]
             self.results['server_info']['IP'] = ip
             try:
-                hostname, _, _ = socket.gethostbyaddr(ip)
+                hostname, _, _ = await asyncio.get_event_loop().getnameinfo((ip, 0), 0)
                 if hostname != parsed_url.hostname:
                     self.results['server_info']['Real hostname'] = hostname
                     self.add_warning("Real hostname exposed through reverse DNS")
-            except socket.herror:
+            except Exception:
                 pass
-        except socket.gaierror:
+        except Exception:
             pass
 
     def add_warning(self, warning):

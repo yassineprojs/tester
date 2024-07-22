@@ -7,6 +7,8 @@ from cookie import CookieSecurityAnalyzer
 from serverLeakage import ServerInfoLeakageDetector
 from sqlSecure import SQLInjectionChecker
 from SSL_TLS import SSLTLSAnalyzer
+import ssl
+import re
 
 class AdvancedScanner:
     def __init__(self, url, max_depth=3, max_urls=100, concurrency=10):
@@ -20,7 +22,8 @@ class AdvancedScanner:
         self.vulnerabilities=[]
         self.sql_injection_checker = None
         self.xss_scanner = None
-        self.cookie_scanner = None
+        self.cookie_analyser = None
+        self.server_leakage_detector = None
         self.scan_results = []
         self.total_score = 0
 
@@ -30,9 +33,8 @@ class AdvancedScanner:
     async def create_session(self):
         self.session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False))
         self.xss_scanner = XSSSecurityAnalyzer(self.session)
-        self.cookie_scanner = CookieSecurityAnalyzer(self.session)
-        # self.cookie_analyzer = CookieSecurityAnalyzer(self.session)
-        # self.server_leakage_detector = ServerInfoLeakageDetector(self.session)
+        self.cookie_analyser = CookieSecurityAnalyzer(self.session)
+        self.leakage_detector = ServerInfoLeakageDetector(self.session)
         # self.sql_injection_checker = SQLInjectionChecker(self.start_url)
         # self.ssl_tls_analyzer = SSLTLSAnalyzer(self.session)
 
@@ -63,15 +65,38 @@ class AdvancedScanner:
                 try:
                     async with self.session.get(url, timeout=10) as response:
                         content = await response.text()
+                        cookies = response.cookies
+
                         xss_results = await self.xss_scanner.analyze(url, content)
+                        leakage_results = await self.leakage_detector.analyze(url)
+                        cookie_results = await self.cookie_analyser.analyze(url, cookies)
+
+                        subsite_score =(
+                            xss_results.get('score',0) + 
+                            leakage_results.get('leakage_score',0) +
+                            cookie_results.get('security_score', 0)
+                            )
+                        self.total_score += subsite_score
+
                         self.scan_results.append({
                             "url": url,
-                            "scan_type": "XSS",
-                            "score": xss_results.get('score', 0),
-                            "findings": xss_results.get('findings', []),
-                            "vulnerabilities": xss_results.get('vulnerabilities', [])
+                            "xss_scan": {
+                                "score": xss_results.get('score', 0),
+                                "findings": xss_results.get('findings', []),
+                                "vulnerabilities": xss_results.get('vulnerabilities', [])
+                            },
+                            "server_leakage": {
+                                "score": leakage_results.get('leakage_score', 0),
+                                "headers": leakage_results.get('headers', {}),
+                                "server_info": leakage_results.get('server_info', {}),
+                                "warnings": leakage_results.get('warnings', [])
+                            },
+                             "cookie_analysis": {
+                                "score": cookie_results.get('security_score', 0),
+                                "cookies": cookie_results.get('cookies', [])
+                            },
+                            "subsite_score":subsite_score
                         })
-                        self.total_score += xss_results.get('score', 0)
                         if depth < self.max_depth:
                             await self.extract_links(url, content, depth + 1)
                 except Exception as e:
@@ -85,13 +110,13 @@ class AdvancedScanner:
             if link.startswith(self.start_url) and link not in self.visited_urls:
                 await self.urls_to_visit.put((link, depth))
 
-    async def check_vulnerabilities(self, url, content,cookies):
-        # Analyze cookies
-        # cookie_results = await self.cookie_analyzer.analyze(url,cookies)
-        # self.vulnerabilities.append(cookie_results)
-        # xss analysis
-        xss_results = await self.xss_scanner.analyze(url, content)
-        self.vulnerabilities.extend(xss_results)
+    # async def check_vulnerabilities(self, url, content,cookies):
+    #     # Analyze cookies
+    #     # cookie_results = await self.cookie_analyzer.analyze(url,cookies)
+    #     # self.vulnerabilities.append(cookie_results)
+    #     # xss analysis
+    #     xss_results = await self.xss_scanner.analyze(url, content)
+    #     self.vulnerabilities.extend(xss_results)
         # Server leakage analysis
     #     server_leakage_results = await self.server_leakage_detector.analyze(url)
     #     self.vulnerabilities.append(server_leakage_results)
