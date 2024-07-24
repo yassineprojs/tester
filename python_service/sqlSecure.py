@@ -3,18 +3,16 @@ import re
 from urllib.parse import urljoin, parse_qs, urlparse
 
 class SQLInjectionChecker:
-    def __init__(self, base_url):
-        self.base_url = base_url
+    def __init__(self, session):
+        self.session = session
         self.results = {
             'vulnerable_parameters': [],
             'warnings': [],
             'vulnerability_score': 0
         }
-        self.session = None
 
-    async def analyze(self):
-        if not self.session:
-            raise ValueError("Session not set. Please set the session before analysis.")
+    async def analyze(self,url):
+        self.base_url = url
         try:
             await self.find_input_points()
             await self.test_input_points()

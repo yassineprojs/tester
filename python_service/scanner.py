@@ -22,8 +22,10 @@ class AdvancedScanner:
         self.vulnerabilities=[]
         self.sql_injection_checker = None
         self.xss_scanner = None
-        self.cookie_analyser = None
+        self.sqm_injection_checker = None
+        # self.cookie_analyser = None
         self.server_leakage_detector = None
+        self.ssl_tls_analyzer = None
         self.scan_results = []
         self.total_score = 0
 
@@ -33,10 +35,10 @@ class AdvancedScanner:
     async def create_session(self):
         self.session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False))
         self.xss_scanner = XSSSecurityAnalyzer(self.session)
-        self.cookie_analyser = CookieSecurityAnalyzer(self.session)
         self.leakage_detector = ServerInfoLeakageDetector(self.session)
-        # self.sql_injection_checker = SQLInjectionChecker(self.start_url)
-        # self.ssl_tls_analyzer = SSLTLSAnalyzer(self.session)
+        self.sql_injection_checker = SQLInjectionChecker(self.session)
+        self.ssl_tls_analyzer = SSLTLSAnalyzer(self.session)
+        # self.cookie_analyser = CookieSecurityAnalyzer(self.session)
 
 
     async def close_session(self):
@@ -69,12 +71,16 @@ class AdvancedScanner:
 
                         xss_results = await self.xss_scanner.analyze(url, content)
                         leakage_results = await self.leakage_detector.analyze(url)
-                        cookie_results = await self.cookie_analyser.analyze(url, cookies)
+                        sql_results = await self.sql_injection_checker.analyze(url)
+                        ssl_tls_results = await self.ssl_tls_analyzer.analyze(url)
+
+                        # cookie_results = await self.cookie_analyser.analyze(url, cookies)
 
                         subsite_score =(
                             xss_results.get('score',0) + 
                             leakage_results.get('leakage_score',0) +
-                            cookie_results.get('security_score', 0)
+                            sql_results.get('vulnerability_score',0)+
+                            ssl_tls_results.get('security_score', 0)
                             )
                         self.total_score += subsite_score
 
@@ -91,9 +97,18 @@ class AdvancedScanner:
                                 "server_info": leakage_results.get('server_info', {}),
                                 "warnings": leakage_results.get('warnings', [])
                             },
-                             "cookie_analysis": {
-                                "score": cookie_results.get('security_score', 0),
-                                "cookies": cookie_results.get('cookies', [])
+                            "sql_injection_scan": {
+                                "score": sql_results.get('vulnerability_score', 0),
+                                "vulnerable_parameters": sql_results.get('vulnerable_parameters', []),
+                                "warnings": sql_results.get('warnings', [])
+                            },
+                            "ssl_tls_scan": {
+                                "score": ssl_tls_results.get('security_score', 0),
+                                "protocol": ssl_tls_results.get('protocol'),
+                                "cipher": ssl_tls_results.get('cipher'),
+                                "tls_version": ssl_tls_results.get('tls_version'),
+                                "certificate": ssl_tls_results.get('certificate'),
+                                "warnings": ssl_tls_results.get('warnings', [])
                             },
                             "subsite_score":subsite_score
                         })

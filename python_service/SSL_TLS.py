@@ -1,75 +1,96 @@
+import asyncio
 import aiohttp
+from datetime import datetime, timezone
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, ec
 from datetime import datetime, timezone
-import OpenSSL
+import OpenSSL.crypto
+
 
 class SSLTLSAnalyzer:
     def __init__(self, session):
         self.session=session
         self.results = {}
 
-    async def analyze(self,url):
+    async def analyze(self, url):
         try:
-            async with self.session.get(url) as response:
+            async with self.session.get(url, ssl=False) as response:
                 self.analyze_connection(response)
                 await self.analyze_certificate(response)
                 self.analyze_cipher_suite(response)
         except aiohttp.ClientSSLError as e:
             self.results['error'] = f"SSL Error: {str(e)}"
-        except aiohttp.ClientError as e:
+        except aiohttp.ClientConnectorError as e:
             self.results['error'] = f"Connection Error: {str(e)}"
         except Exception as e:
-            self.results['error'] = f"Unexpected Error: {str(e)}"
+            self.results['error'] = f"Unexpected error: {str(e)}"
 
         self.results['security_score'] = self.get_security_score()
         return self.results
 
     def analyze_connection(self, response):
-        self.results['protocol'] = response.version()
-        self.results['cipher'] = response.cipher()
-        self.results['tls_version'] = response.connection.transport.get_extra_info('ssl_object').version()
+        ssl_object = response.connection.transport.get_extra_info('ssl_object')
+        if ssl_object:
+            self.results['protocol'] = ssl_object.version()
+            self.results['cipher'] = ssl_object.cipher()
+            self.results['tls_version'] = ssl_object.version()
+        else:
+            self.results['error'] = "No SSL connection established"
 
     async def analyze_certificate(self, response):
         ssl_object = response.connection.transport.get_extra_info('ssl_object')
-        cert_binary = ssl_object.getpeercert(binary_form=True)
-        cert = x509.load_der_x509_certificate(cert_binary, default_backend())
-        openssl_cert = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_ASN1, cert_binary)
+        if not ssl_object:
+            self.results['error'] = "No SSL connection established"
+            return
 
+        try:
+            cert_binary = ssl_object.getpeercert(binary_form=True)
+            if not cert_binary:
+                self.results['error'] = "No certificate found"
+                return
 
-        self.results['certificate'] = {
-            'subject': cert.subject.rfc4514_string(),
-            'issuer': cert.issuer.rfc4514_string(),
-            'version': cert.version,
-            'not_valid_before': cert.not_valid_before,
-            'not_valid_after': cert.not_valid_after,
-            'serial_number': cert.serial_number,
-            'key_size': cert.public_key().key_size,
-            'signature_algorithm': cert.signature_algorithm_oid._name,
-            'subject_alternative_names': self.get_sans(cert),
-            'key_usage': self.get_key_usage(cert),
-            'extended_key_usage': self.get_extended_key_usage(cert),
-            'ocsp_urls': self.get_ocsp_urls(cert),
-            'crl_distribution_points': self.get_crl_distribution_points(cert),
-        }
+            cert = x509.load_der_x509_certificate(cert_binary, default_backend())
+            openssl_cert = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_ASN1, cert_binary)
 
-        self.analyze_key_type(cert)
-        self.check_certificate_validity(cert)
-        self.check_key_strength(cert)
-        self.check_signature_algorithm(cert)
-        self.check_certificate_transparency(openssl_cert)
+            self.results['certificate'] = {
+                'subject': cert.subject.rfc4514_string(),
+                'issuer': cert.issuer.rfc4514_string(),
+                'version': cert.version,
+                'not_valid_before': cert.not_valid_before,
+                'not_valid_after': cert.not_valid_after,
+                'serial_number': cert.serial_number,
+                'key_size': cert.public_key().key_size,
+                'signature_algorithm': cert.signature_algorithm_oid._name,
+                'subject_alternative_names': self.get_sans(cert),
+                'key_usage': self.get_key_usage(cert),
+                'extended_key_usage': self.get_extended_key_usage(cert),
+                'ocsp_urls': self.get_ocsp_urls(cert),
+                'crl_distribution_points': self.get_crl_distribution_points(cert),
+            }
+
+            self.analyze_key_type(cert)
+            self.check_certificate_validity(cert)
+            self.check_key_strength(cert)
+            self.check_signature_algorithm(cert)
+            self.check_certificate_transparency(openssl_cert)
+        except Exception as e:
+            self.results['error'] = f"Error analyzing certificate: {str(e)}"
+            print(f"Certificate analysis error: {str(e)}")
 
     def analyze_cipher_suite(self, response):
         ssl_object = response.connection.transport.get_extra_info('ssl_object')
-        cipher = ssl_object.cipher()
-        self.results['cipher_suite'] = {
-            'name': cipher[0],
-            'protocol': cipher[1],
-            'key_size': cipher[2]
-        }
-        self.check_cipher_strength(cipher[0])
+        if ssl_object:
+            cipher = ssl_object.cipher()
+            self.results['cipher_suite'] = {
+                'name': cipher[0],
+                'protocol': cipher[1],
+                'key_size': cipher[2]
+            }
+            self.check_cipher_strength(cipher[0])
+        else:
+            self.results['error'] = "No SSL connection established"
 
     def get_sans(self, cert):
         try:
@@ -168,24 +189,24 @@ class SSLTLSAnalyzer:
             score += 1
 
         # Check certificate validity
-        if self.results['certificate']['status'] == "Valid":
+        if self.results.get('certificate', {}).get('status') == "Valid":
             score += 2
 
+
         # Check key size
-        if self.results['certificate']['key_size'] >= 2048:
+        if self.results.get('certificate', {}).get('key_size', 0) >= 2048:
             score += 2
-        elif self.results['certificate']['key_size'] >= 1024:
+        elif self.results.get('certificate', {}).get('key_size', 0) >= 1024:
             score += 1
 
         # Check signature algorithm
-        if 'sha256' in self.results['certificate']['signature_algorithm'].lower():
+        if 'sha256' in self.results.get('certificate', {}).get('signature_algorithm', '').lower():
             score += 1
-
         # Check for Certificate Transparency
-        if 'sct_count' in self.results['certificate'] and self.results['certificate']['sct_count'] > 0:
+        if self.results.get('certificate', {}).get('sct_count', 0) > 0:
             score += 1
 
         # Deduct points for warnings
         score -= len(self.results.get('warnings', []))
 
-        return max(0, min(score))
+        return max(0, min(score, 10))
