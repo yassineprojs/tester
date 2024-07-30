@@ -1,4 +1,3 @@
-import requests
 import re
 from urllib.parse import urljoin, parse_qs, urlparse
 
@@ -6,29 +5,53 @@ class SQLInjectionChecker:
     def __init__(self, session):
         self.session = session
         self.results = {
-            'vulnerable_parameters': [],
+            'url': '',
+            'score': 0,
+            'findings': set(),
             'warnings': [],
-            'vulnerability_score': 0
+            'vulnerabilities': [],
+            'details': {
+                'input_points': {
+                    'forms': [],
+                    'get_params': []
+                }
+            }
         }
 
-    async def analyze(self,url):
-        self.base_url = url
+    def add_finding(self, finding):
+        self.results['findings'].add(finding)
+
+    def add_warning(self, warning):
+        self.results['warnings'].append(warning)
+
+    def add_vulnerability(self, vulnerability):
+        self.results['vulnerabilities'].append(vulnerability)
+
+    def update_score(self, value):
+        self.results['score'] += value
+
+    def add_detail(self, category, key, value):
+        if category not in self.results['details']:
+            self.results['details'][category] = {}
+        self.results['details'][category][key] = value
+
+    async def analyze(self, url):
+        self.results['url'] = url
         try:
             await self.find_input_points()
             await self.test_input_points()
             self.calculate_vulnerability_score()
         except Exception as e:
-            self.results['error'] = f"Request Error: {str(e)}"
-        return self.results
+            self.add_detail('error', 'request_error', str(e))
+        return self.generate_report()
 
     async def find_input_points(self):
-        async with self.session.get(self.base_url) as response:
+        async with self.session.get(self.results['url']) as response:
             html = await response.text()
-            self.results['input_points'] = {
-                'forms': self.extract_forms(html),
+            self.results['details']['input_points'] = {
+                'forms': await self.extract_forms(html),
                 'get_params': self.extract_get_params(str(response.url))
             }
-
 
     async def extract_forms(self, html):
         form_pattern = re.compile(r'<form.*?action=["\']([^"\']*)["\'].*?>(.*?)</form>', re.DOTALL | re.IGNORECASE)
@@ -41,19 +64,19 @@ class SQLInjectionChecker:
             forms.append({'action': action, 'inputs': inputs})
         return forms
 
-    async def extract_get_params(self, url):
+    def extract_get_params(self, url):
         parsed_url = urlparse(url)
         return list(parse_qs(parsed_url.query).keys())
 
     async def test_input_points(self):
-        for form in self.results['input_points']['forms']:
+        for form in self.results['details']['input_points']['forms']:
             await self.test_form(form)
         
-        for param in self.results['input_points']['get_params']:
+        for param in self.results['details']['input_points']['get_params']:
             await self.test_get_param(param)
 
     async def test_form(self, form):
-        action_url = urljoin(self.base_url, form['action'])
+        action_url = urljoin(self.results['url'], form['action'])
         for input_name in form['inputs']:
             payloads = self.generate_sql_payloads(input_name)
             for payload in payloads:
@@ -67,11 +90,11 @@ class SQLInjectionChecker:
     async def test_get_param(self, param):
         payloads = self.generate_sql_payloads(param)
         for payload in payloads:
-            url = f"{self.base_url}?{param}={payload}"
+            url = f"{self.results['url']}?{param}={payload}"
             async with self.session.get(url) as response:
                 content = await response.text()
                 if self.check_sql_error(content):
-                    self.add_vulnerability(f"GET parameter '{param}' in {self.base_url}")
+                    self.add_vulnerability(f"GET parameter '{param}' in {self.results['url']}")
                     break
 
     def generate_sql_payloads(self, param):
@@ -114,15 +137,23 @@ class SQLInjectionChecker:
         ]
         return any(re.search(pattern, content, re.IGNORECASE) for pattern in error_patterns)
 
-    def add_vulnerability(self, description):
-        if description not in self.results['vulnerable_parameters']:
-            self.results['vulnerable_parameters'].append(description)
-            self.add_warning(f"Potential SQL Injection vulnerability found: {description}")
-
-    def add_warning(self, warning):
-        if warning not in self.results['warnings']:
-            self.results['warnings'].append(warning)
-
     def calculate_vulnerability_score(self):
-        score = len(self.results['vulnerable_parameters']) * 2
-        self.results['vulnerability_score'] = min(score, 10)  # Cap the score at 10
+        score = len(self.results['vulnerabilities']) * 2
+        self.update_score(min(score, 10))  # Cap the score at 10
+
+    def generate_report(self):
+        overall_assessment = "No SQL Injection vulnerabilities detected"
+        if self.results['score'] >= 7:
+            overall_assessment = "Critical SQL Injection vulnerabilities detected - immediate action required"
+        elif self.results['score'] >= 4:
+            overall_assessment = "Potential SQL Injection vulnerabilities detected - further investigation needed"
+
+        return {
+            "url": self.results['url'],
+            "score": self.results['score'],
+            "findings": list(self.results['findings']),
+            "warnings": self.results['warnings'],
+            "vulnerabilities": self.results['vulnerabilities'],
+            "details": self.results['details'],
+            "overall_assessment": overall_assessment
+        }

@@ -1,100 +1,104 @@
 import React, { useState, useEffect } from "react";
-import ReactDOM from "react-dom/client";
-import { Experience } from "./Experience";
-// import { useAIAssistant } from "../hooks/useAIAssistant";
 
 function SecurityAnalysis() {
-  // const [result, setResult] = useState("");
-  // const [question, setQuestion] = useState("");
-  // const { askAI, messages, currentMessage, loading } = useAIAssistant();
-
-  // useEffect(() => {
-  //   handleAnalyze();
-  // }, []);
-
-  // const handleAnalyze = async () => {
-  //   try {
-  //     const data = await analyseCurrentPage();
-  //     setResult(JSON.stringify(data, null, 2));
-  //   } catch (error) {
-  //     console.error("Error", error);
-  //     setResult("Error occured durin analysis");
-  //   }
-  // };
-
-  // const handleAskAi = async () => {
-  //   if (!question) return;
-  //   await askAI(question, result);
-  //   setQuestion(""); // Clear the question input after asking
-  // };
   const [analysisResult, setAnalysisResult] = useState(null);
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [currentTabId, setCurrentTabId] = useState(null);
+  const [expandedSection, setExpandedSection] = useState(null);
 
   useEffect(() => {
-    const handleAnalysisComplete = (message) => {
-      if (message.action === "analysisComplete") {
+    const handleMessage = (message) => {
+      if (message.action === "analysisStarted") {
+        setAnalysisResult(null);
+        setLoading(true);
+        setCurrentTabId(message.tabId);
+      } else if (
+        message.action === "analysisComplete" &&
+        message.tabId === currentTabId
+      ) {
         setAnalysisResult(message.result);
+        setLoading(false);
       }
     };
 
-    chrome.runtime.onMessage.addListener(handleAnalysisComplete);
+    chrome.runtime.onMessage.addListener(handleMessage);
 
-    if (chrome && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(["analysisResult"], (result) => {
-        if (result.analysisResult) {
-          setAnalysisResult(result.analysisResult);
-        } else {
-          setError("No analysis result found. Please run the analysis first.");
-        }
-      });
-    } else {
-      setError(
-        "Chrome storage is not available. Are you running this in a browser extension context?"
-      );
-    }
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+      if (tabs[0]) {
+        setCurrentTabId(tabs[0].id);
+        chrome.storage.local.get(
+          ["currentAnalysisTabId", `analysisResult_${tabs[0].id}`],
+          (result) => {
+            if (
+              result.currentAnalysisTabId === tabs[0].id &&
+              result[`analysisResult_${tabs[0].id}`]
+            ) {
+              setAnalysisResult(result[`analysisResult_${tabs[0].id}`]);
+              setLoading(false);
+            } else {
+              chrome.runtime.sendMessage({
+                action: "startAnalysis",
+                tabId: tabs[0].id,
+              });
+            }
+          }
+        );
+      } else {
+        setError("No active tab found");
+        setLoading(false);
+      }
+    });
 
     return () => {
-      chrome.runtime.onMessage.removeListener(handleAnalysisComplete);
+      chrome.runtime.onMessage.removeListener(handleMessage);
     };
-  }, []);
+  }, [currentTabId]);
+
+  const handleReanalyze = () => {
+    setLoading(true);
+    setAnalysisResult(null);
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+      if (tabs[0]) {
+        setCurrentTabId(tabs[0].id);
+        chrome.runtime.sendMessage({
+          action: "startAnalysis",
+          tabId: tabs[0].id,
+        });
+      } else {
+        setError("No active tab found");
+        setLoading(false);
+      }
+    });
+  };
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
+  const calculateOverallScore = (result) => {
+    const scores = [
+      result.serverLeakage.score,
+      result.sqlInjection.score,
+      result.xss.score,
+    ];
+    return (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1);
+  };
 
   return (
-    <div className="security-analysis-overlay">
-      <Experience />
-      <div className="security-analysis-ui">
-        {/* <button onClick={handleAnalyze}>Analyze current Page</button> */}
-        {/* <pre className="security-analysis-result">{result}</pre> */}
-        {error ? (
-          <div className="error-message">{error}</div>
-        ) : (
+    <div className="security-analysis-popup">
+      {error ? (
+        <div className="error-message">{error}</div>
+      ) : analysisResult ? (
+        <>
           <pre className="security-analysis-result">
-            {analysisResult
-              ? JSON.stringify(analysisResult, null, 2)
-              : "Loading..."}
+            {JSON.stringify(analysisResult, null, 2)}
           </pre>
-        )}
-        {/* <input
-          type="text"
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          placeholder="Ask a question about the security analysis"
-        /> */}
-
-        {/* <button onClick={handleAskAi} disabled={loading}>
-          {loading ? "Processing..." : "Ask AI"}
-        </button>
-        {messages.map((message) => (
-          <div key={message.id}>
-            <p>Q: {message.question}</p>
-            <p>A: {message.answer}</p>
-            {message.audioPlayer && (
-              <button onClick={() => message.audioPlayer.play()}>
-                Play Audio
-              </button>
-            )}
-          </div>
-        ))} */}
-      </div>
+          <button onClick={handleReanalyze}>Reanalyze</button>
+        </>
+      ) : (
+        <div>Analysis in progress...</div>
+      )}
     </div>
   );
 }

@@ -20,7 +20,8 @@ export default defineConfig({
           __dirname,
           "src/components/securityAnalysis.jsx"
         ),
-        main: path.resolve(__dirname, "index.html"),
+        popup: path.resolve(__dirname, "src/popup.jsx"),
+        popup: path.resolve(__dirname, "popup.html"),
       },
       output: {
         entryFileNames: `assets/[name].js`,

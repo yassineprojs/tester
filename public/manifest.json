@@ -23,13 +23,11 @@
 
   "web_accessible_resources": [
     {
-      "resources": [
-        "assets/securityAnalysis.js",
-        "models/modelSpeakMove.glb",
-        "index.html"
-      ],
+      "resources": ["assets/securityAnalysis.js"],
       "matches": ["<all_urls>"]
     }
   ],
-  "action": {}
+  "action": {
+    "default_popup": "popup.html"
+  }
 }
