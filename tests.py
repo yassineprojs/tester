@@ -1,208 +1,140 @@
 import asyncio
 import aiohttp
-from datetime import datetime, timezone
-from cryptography import x509
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import rsa, ec
-import OpenSSL.crypto
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse
+from xssSecure import XSSSecurityAnalyzer
+from cookie import CookieSecurityAnalyzer
+from serverLeakage import ServerInfoLeakageDetector
+from sqlSecure import SQLInjectionChecker
+from SSL_TLS import SSLTLSAnalyzer
 import ssl
+import re
+from urllib.robotparser import RobotFileParser
+import async_timeout
 
-class SSLTLSAnalyzer:
-    def __init__(self, session):
-        self.session = session
-        self.reset_results()
-    def reset_results(self):
-        self.results = {
-            'url': '',
-            'score': 0,
-            'findings': set(),
-            'warnings': set(),
-            'vulnerabilities': [],
-            'details': {
-                'protocol': '',
-                'cipher': '',
-                'tls_version': '',
-                'certificate': {},
-                'cipher_suite': {}
-            }
-        }
+class AdvancedScanner:
+    def __init__(self, url, max_depth=3, max_urls=100, concurrency=10, timeout=300):
+        self.start_url = url
+        self.max_depth = max_depth
+        self.max_urls = max_urls
+        self.concurrency = concurrency
+        self.timeout = timeout
+        self.visited_urls = set()
+        self.urls_to_visit = asyncio.Queue()
+        self.session = None
+        self.vulnerabilities = []
+        self.sql_injection_checker = None
+        self.xss_scanner = None
+        self.leakage_detector = None
+        self.ssl_tls_analyzer = None
+        self.scan_results = []
+        self.total_score = 0
+        self.robot_parser = None
 
-    def add_finding(self, finding):
-        self.results['findings'].add(finding)
+    async def create_session(self):
+        self.session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False))
+        self.xss_scanner = XSSSecurityAnalyzer(self.session)
+        self.leakage_detector = ServerInfoLeakageDetector(self.session)
+        self.sql_injection_checker = SQLInjectionChecker(self.session)
+        self.ssl_tls_analyzer = SSLTLSAnalyzer(self.session)
+        self.cookie_analyser = CookieSecurityAnalyzer(self.session)
+        await self.setup_robot_parser()
 
-    def add_warning(self, warning):
-        self.results['warnings'].add(warning)
+    async def close_session(self):
+        if self.session:
+            await self.session.close()
 
-    def add_vulnerability(self, vulnerability):
-        self.results['vulnerabilities'].append(vulnerability)
-
-    def update_score(self, value):
-        self.results['score'] += value
-
-    def add_detail(self, category, key, value):
-        if category not in self.results['details']:
-            self.results['details'][category] = {}
-        self.results['details'][category][key] = str(value)
-
-    async def analyze(self, url):
-        self.reset_results()
-        self.results['url'] = url
+    async def setup_robot_parser(self):
+        self.robot_parser = RobotFileParser()
+        robots_url = urljoin(self.start_url, '/robots.txt')
         try:
-            ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-            
-            async with self.session.get(url, ssl=ssl_context) as response:
-                self.analyze_connection(response)
-                await self.analyze_certificate(response)
-                self.analyze_cipher_suite(response)
-        except aiohttp.ClientSSLError as e:
-            self.add_warning(f"SSL Error: {str(e)}")
+            async with self.session.get(robots_url) as response:
+                if response.status == 200:
+                    content = await response.text()
+                    self.robot_parser.parse(content.splitlines())
+                else:
+                    print(f"No robots.txt found at {robots_url}")
         except Exception as e:
-            self.add_warning(f"Error during SSL/TLS analysis: {str(e)}")
+            print(f"Error fetching robots.txt: {e}")
+
+    def is_allowed(self, url):
+        if self.robot_parser:
+            return self.robot_parser.can_fetch("*", url)
+        return True
+
+    async def crawl(self):
+        await self.create_session()
+        await self.urls_to_visit.put((self.start_url, 0))
+
+        tasks = [asyncio.create_task(self.process_url()) for _ in range(self.concurrency)]
         
-        self.calculate_security_score()
-        return self.generate_report()
-
-    def analyze_connection(self, response):
-        ssl_object = response.connection.transport.get_extra_info('ssl_object')
-        if ssl_object:
-            self.add_detail('protocol', 'version', ssl_object.version())
-            self.add_detail('cipher', 'name', ssl_object.cipher()[0])
-            self.add_detail('tls_version', 'version', ssl_object.version())
-        else:
-            self.add_warning("No SSL connection established")
-
-    async def analyze_certificate(self, response):
-        ssl_object = response.connection.transport.get_extra_info('ssl_object')
-        if not ssl_object:
-            self.add_warning("No SSL connection established")
-            return
-
         try:
-            cert_binary = ssl_object.getpeercert(binary_form=True)
-            if not cert_binary:
-                self.add_warning("No certificate found")
-                return
+            async with async_timeout.timeout(self.timeout):
+                await self.urls_to_visit.join()
+        except asyncio.TimeoutError:
+            print(f"Scan timed out after {self.timeout} seconds")
+        finally:
+            for task in tasks:
+                task.cancel()
+            
+            await asyncio.gather(*tasks, return_exceptions=True)
+            await self.close_session()
 
-            cert = x509.load_der_x509_certificate(cert_binary, default_backend())
-            openssl_cert = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_ASN1, cert_binary)
+    async def process_url(self):
+        while True:
+            try:
+                url, depth = await self.urls_to_visit.get()
+                if url not in self.visited_urls and len(self.visited_urls) < self.max_urls and self.is_allowed(url):
+                    self.visited_urls.add(url)
+                    print(f"Scanning: {url}")
+                    try:
+                        content = await self.fetch_content(url)
+                        if content is None:
+                            print(f"Skipping {url} due to content fetch error")
+                            continue
+                        server_task = asyncio.create_task(self.leakage_detector.analyze(url))
+                        xss_task = asyncio.create_task(self.xss_scanner.analyze(url, content))
+                        ssl_tls_task = asyncio.create_task(self.ssl_tls_analyzer.analyze(url))
+                        xss_results, leakage_results, ssl_tls_results = await asyncio.gather(xss_task, server_task, ssl_tls_task)
 
-            self.add_detail('certificate', 'subject', cert.subject.rfc4514_string())
-            self.add_detail('certificate', 'issuer', cert.issuer.rfc4514_string())
-            self.add_detail('certificate', 'version', cert.version)
-            self.add_detail('certificate', 'not_valid_before', cert.not_valid_before.isoformat())
-            self.add_detail('certificate', 'not_valid_after', cert.not_valid_after.isoformat())
-            self.add_detail('certificate', 'serial_number', str(cert.serial_number))
+                        subsite_score = (
+                            leakage_results.get('score', 0) +
+                            xss_results.get('score', 0) +
+                            ssl_tls_results.get('score', 0)
+                        )
+                        self.total_score += subsite_score
+                        self.scan_results.append({
+                            "url": url,
+                            "ssl_tls_scan": ssl_tls_results,
+                            "server_leakage": leakage_results,
+                            "xss_scan": xss_results,
+                            "subsite_score": subsite_score
+                        })
+                        if depth < self.max_depth:
+                            await self.extract_links(url, content, depth + 1)
+                    except Exception as e:
+                        print(f"Error processing {url}: {e}")
+            finally:
+                self.urls_to_visit.task_done()
 
-            self.analyze_key_type(cert)
-            self.check_certificate_validity(cert)
-            self.check_key_strength(cert)
-            self.check_signature_algorithm(cert)
-            self.check_certificate_transparency(openssl_cert)
+    async def fetch_content(self, url):
+        try:
+            async with self.session.get(url, timeout=10) as response:
+                return await response.text()
         except Exception as e:
-            self.add_warning(f"Error analyzing certificate: {str(e)}")
-            print(f"Certificate analysis error: {str(e)}")
+            print(f"Error fetching content from {url}: {e}")
+            return None
 
-    def analyze_cipher_suite(self, response):
-        ssl_object = response.connection.transport.get_extra_info('ssl_object')
-        if ssl_object:
-            cipher = ssl_object.cipher()
-            if cipher:
-                self.add_detail('cipher_suite', 'name', cipher[0])
-                self.add_detail('cipher_suite', 'protocol', cipher[1])
-                self.add_detail('cipher_suite', 'key_size', str(cipher[2]))
-                self.check_cipher_strength(cipher[0])
-        else:
-            self.add_warning("No SSL connection established")
-
-    def analyze_key_type(self, cert):
-        public_key = cert.public_key()
-        if isinstance(public_key, rsa.RSAPublicKey):
-            self.add_detail('certificate', 'key_type', 'RSA')
-        elif isinstance(public_key, ec.EllipticCurvePublicKey):
-            self.add_detail('certificate', 'key_type', 'ECC')
-            self.add_detail('certificate', 'curve', public_key.curve.name)
-
-    def check_certificate_validity(self, cert):
-        now = datetime.now(timezone.utc)
-        if now < cert.not_valid_before:
-            self.add_detail('certificate', 'status', "Not yet valid")
-        elif now > cert.not_valid_after:
-            self.add_detail('certificate', 'status', "Expired")
-        else:
-            self.add_detail('certificate', 'status', "Valid")
-
-    def check_key_strength(self, cert):
-        key_size = cert.public_key().key_size
-        if isinstance(cert.public_key(), rsa.RSAPublicKey):
-            if key_size < 2048:
-                self.add_warning("Weak RSA key size (< 2048 bits)")
-        elif isinstance(cert.public_key(), ec.EllipticCurvePublicKey):
-            if key_size < 256:
-                self.add_warning("Weak ECC key size (< 256 bits)")
-
-    def check_signature_algorithm(self, cert):
-        weak_algorithms = ['md5', 'sha1']
-        if any(alg in cert.signature_algorithm_oid._name.lower() for alg in weak_algorithms):
-            self.add_warning("Weak signature algorithm")
-
-    def check_certificate_transparency(self, openssl_cert):
-        scts = openssl_cert.get_extension_count()
-        for i in range(scts):
-            ext = openssl_cert.get_extension(i)
-            if ext.get_short_name() == b'CT Precertificate SCTs':
-                self.add_detail('certificate', 'sct_count', str(len(ext.get_data())))
-                return
-        self.add_warning("No Certificate Transparency SCTs found")
-
-    def check_cipher_strength(self, cipher_name):
-        weak_ciphers = ['RC4', 'DES', '3DES', 'MD5', 'NULL']
-        if any(weak in cipher_name for weak in weak_ciphers):
-            self.add_warning(f"Weak cipher suite: {cipher_name}")
-
-    def calculate_security_score(self):
-        if self.results['details']['tls_version'] == 'TLSv1.3':
-            self.update_score(3)
-        elif self.results['details']['tls_version'] == 'TLSv1.2':
-            self.update_score(2)
-        elif self.results['details']['tls_version'] == 'TLSv1.1':
-            self.update_score(1)
-
-        if self.results['details']['certificate'].get('status') == "Valid":
-            self.update_score(2)
-
-        if self.results['details']['certificate'].get('key_size', 0) >= 2048:
-            self.update_score(2)
-        elif self.results['details']['certificate'].get('key_size', 0) >= 1024:
-            self.update_score(1)
-
-        if 'sha256' in self.results['details']['certificate'].get('signature_algorithm', '').lower():
-            self.update_score(1)
-
-        if int(self.results['details']['certificate'].get('sct_count', 0)) > 0:
-            self.update_score(1)
-
-        self.update_score(-len(self.results['warnings']))
-
-        self.results['score'] = max(0, min(self.results['score'], 10))
-
-    def generate_report(self):
-        overall_assessment = "Poor SSL/TLS security"
-        if self.results['score'] >= 8:
-            overall_assessment = "Excellent SSL/TLS security"
-        elif self.results['score'] >= 6:
-            overall_assessment = "Good SSL/TLS security"
-        elif self.results['score'] >= 4:
-            overall_assessment = "Moderate SSL/TLS security, improvements recommended"
-
+    async def get_results(self):
         return {
-            "url": self.results['url'],
-            "score": self.results['score'],
-            "findings": list(self.results['findings']),
-            "warnings": list(self.results['warnings']),
-            "vulnerabilities": self.results['vulnerabilities'],
-            "details": self.results['details'],
-            "overall_assessment": overall_assessment
+            "scanned_pages": list(self.visited_urls),
+            "scan_results": self.scan_results,
+            "total_score": self.total_score
         }
+
+    async def extract_links(self, base_url, content, depth):
+        soup = BeautifulSoup(content, 'html.parser')
+        for a_tag in soup.find_all('a', href=True):
+            link = urljoin(base_url, a_tag['href'])
+            if link.startswith(self.start_url) and link not in self.visited_urls and self.is_allowed(link):
+                await self.urls_to_visit.put((link, depth))

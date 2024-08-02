@@ -28,7 +28,7 @@ class ServerInfoLeakageDetector:
         self.results['vulnerabilities'].append(vulnerability)
 
     def update_score(self, value):
-        self.results['score'] += value
+        self.results['score'] = max(0, min(10, self.results['score'] + value))
 
     def add_detail(self, category, key, value):
         self.results['details'][category][key] = value
@@ -61,19 +61,19 @@ class ServerInfoLeakageDetector:
 
         if 'X-Frame-Options' not in headers:
             self.add_warning("X-Frame-Options header is missing")
-            self.update_score(0.5)
+            self.update_score(0.25)
         
         if 'Strict-Transport-Security' not in headers:
             self.add_warning("HSTS header is missing")
-            self.update_score(0.5)
+            self.update_score(0.25)
 
         if 'X-XSS-Protection' not in headers:
             self.add_warning("X-XSS-Protection header is missing")
-            self.update_score(0.5)
+            self.update_score(0.25)
 
         if 'X-Content-Type-Options' not in headers:
             self.add_warning("X-Content-Type-Options header is missing")
-            self.update_score(0.5)
+            self.update_score(0.25)
 
     def analyze_content(self, content):
         patterns = {
@@ -91,7 +91,7 @@ class ServerInfoLeakageDetector:
             if matches:
                 self.add_detail('server_info', key, matches)
                 self.add_warning(f"Potential information leakage: {key}")
-                self.update_score(2)
+                self.update_score(1)
 
     async def analyze_error_pages(self):
         error_urls = [
@@ -133,7 +133,7 @@ class ServerInfoLeakageDetector:
             if 'Banner Server' in self.results['details']['server_info']:
                 server = self.results['details']['server_info']['Banner Server']
                 self.add_warning(f"Server software version exposed: {server}")
-                self.update_score(3)  # 3 points for exposed server version
+                self.update_score(1) 
         except (asyncio.TimeoutError, ConnectionRefusedError):
             pass
 
@@ -150,7 +150,7 @@ class ServerInfoLeakageDetector:
                 if hostname != parsed_url.hostname:
                     self.add_detail('server_info', 'Real hostname', hostname)
                     self.add_warning("Real hostname exposed through reverse DNS")
-                    self.update_score(2)
+                    self.update_score(1)
             except Exception:
                 pass
         except Exception:

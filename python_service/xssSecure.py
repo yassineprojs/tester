@@ -4,11 +4,10 @@ import re
 from urllib.parse import urljoin, urlparse, parse_qs
 
 class XSSSecurityAnalyzer:
-    def __init__(self, retry_client):
+    def __init__(self, session):
+        self.session = session
         self.scans = []
         self.total_score = 0
-        self.retry_client = retry_client
-
 
     def add_finding(self, finding):
         self.results['findings'].add(finding)
@@ -20,7 +19,8 @@ class XSSSecurityAnalyzer:
         self.results['vulnerabilities'].append(vulnerability)
 
     def update_score(self, value):
-        self.results['score'] += value
+        self.results['score'] = max(0, min(10, self.results['score'] + value))
+
 
     def add_detail(self, category, key, value):
         if category not in self.results['details']:
@@ -48,7 +48,7 @@ class XSSSecurityAnalyzer:
         return report
 
     async def check_headers(self):
-        async with self.retry_client.get(self.results['url']) as response:
+        async with self.session.get(self.results['url']) as response:
             headers = response.headers
             self._check_content_security_policy(headers)
             self._check_strict_transport_security(headers)
@@ -75,7 +75,7 @@ class XSSSecurityAnalyzer:
                     self.update_score(1)
                     self.add_finding("CSP uses 'default-src: none' - strict policy")
                 elif "'self'" in directive:
-                    self.update_score(0.5)
+                    self.update_score(0.25)
                     self.add_finding("CSP uses 'default-src: self' - moderately strict")
             elif directive.startswith('script-src'):
                 if "'unsafe-inline'" in directive or "'unsafe-eval'" in directive:
@@ -90,16 +90,16 @@ class XSSSecurityAnalyzer:
             self.update_score(1)
             self.add_finding("HSTS header present - good")
             if 'includeSubDomains' in hsts:
-                self.update_score(0.5)
+                self.update_score(0.25)
                 self.add_finding("HSTS includes subdomains")
             if 'preload' in hsts:
-                self.update_score(0.5)
+                self.update_score(0.25)
                 self.add_finding("HSTS preload ready")
             max_age = re.search(r'max-age=(\d+)', hsts)
             if max_age:
                 age = int(max_age.group(1))
                 if age >= 31536000:
-                    self.update_score(0.5)
+                    self.update_score(0.25)
                     self.add_finding("HSTS max-age is at least one year")
                 else:
                     self.add_warning(f"HSTS max-age is {age} seconds - consider increasing to at least one year")
@@ -112,7 +112,7 @@ class XSSSecurityAnalyzer:
             self.update_score(1)
             self.add_finding(f"X-Frame-Options header present: {x_frame_options}")
             if x_frame_options.upper() in ['DENY', 'SAMEORIGIN']:
-                self.update_score(0.5)
+                self.update_score(0.25)
                 self.add_finding("X-Frame-Options properly set to prevent clickjacking")
         else:
             self.add_warning("X-Frame-Options header missing - consider implementing to prevent clickjacking")
@@ -134,7 +134,7 @@ class XSSSecurityAnalyzer:
             self.update_score(1)
             self.add_finding(f"Referrer-Policy header present: {referrer_policy}")
             if referrer_policy.lower() in ['no-referrer', 'strict-origin-when-cross-origin']:
-                self.update_score(0.5)
+                self.update_score(0.25)
                 self.add_finding("Referrer-Policy set to a strict value")
         else:
             self.add_warning("Referrer-Policy header missing - consider implementing to control referrer information")
@@ -153,7 +153,7 @@ class XSSSecurityAnalyzer:
         inline_scripts = soup.find_all('script', src=False)
         if inline_scripts:
             self.add_warning(f"Inline scripts detected - consider moving to external files")
-            self.update_score(-len(inline_scripts))
+            self.update_score(-1)
 
         unsafe_js_patterns = {
             r'document\.write': "Usage of document.write detected - potential XSS risk",
@@ -167,10 +167,10 @@ class XSSSecurityAnalyzer:
         for pattern, message in unsafe_js_patterns.items():
             if re.search(pattern, content, re.IGNORECASE):
                 self.add_warning(message)
-                self.update_score(-1)
+                self.update_score(-0.5)
 
         if re.search(r"<[^>]*>.*&lt;script&gt;", content):
-            self.update_score(1)
+            self.update_score(0.5)
             self.add_finding("Evidence of HTML encoding in output - good practice")
 
     async def check_reflected_xss(self, url, content):
@@ -181,7 +181,7 @@ class XSSSecurityAnalyzer:
         for param, values in params.items():
             for payload in payloads:
                 test_url = url.replace(f"{param}={values[0]}", f"{param}={payload}")
-                async with self.retry_client.get(test_url) as response:
+                async with self.session.get(test_url) as response:
                     response_text = await response.text()
                     if payload in response_text:
                         self.add_vulnerability(f"Reflected XSS found in URL parameter {param} at {url}")
@@ -196,7 +196,7 @@ class XSSSecurityAnalyzer:
         method = form.get('method', 'get').lower()
         for payload in payloads:
             data = {input.get('name'): payload for input in form.find_all('input') if input.get('name')}
-            async with self.retry_client.request(method, action, data=data if method == 'post' else None, params=data if method == 'get' else None) as response:
+            async with self.session.request(method, action, data=data if method == 'post' else None, params=data if method == 'get' else None) as response:
                 response_text = await response.text()
             if payload in response_text:
                 self.add_vulnerability(f"Reflected XSS found in form at {url}")

@@ -9,6 +9,7 @@ import OpenSSL.crypto
 from typing import Dict, Any, List, Optional
 import ssl
 
+
 class SSLTLSAnalyzer:
     def __init__(self, session: aiohttp.ClientSession):
         self.session = session
@@ -37,7 +38,7 @@ class SSLTLSAnalyzer:
         self.results['vulnerabilities'].add(vulnerability)
 
     def update_score(self, value: float) -> None:
-        self.results['score'] += value
+        self.results['score'] = max(0, min(10, self.results['score'] + value))
 
     def add_detail(self, category: str, key: str, value: Any) -> None:
         if category not in self.results['details']:
@@ -70,10 +71,10 @@ class SSLTLSAnalyzer:
                 
                 # Score TLS version
                 if protocol_version == 'TLSv1.3':
-                    self.update_score(3)
+                    self.update_score(1)
                     self.add_finding("TLS 1.3 in use")
                 elif protocol_version == 'TLSv1.2':
-                    self.update_score(2)
+                    self.update_score(0.5)
                     self.add_finding("TLS 1.2 in use")
                 else:
                     self.add_warning("Outdated TLS version in use")
@@ -187,45 +188,45 @@ class SSLTLSAnalyzer:
         now = datetime.now(timezone.utc)
         if now < cert.not_valid_before:
             self.add_warning("Certificate not yet valid")
-            self.update_score(-2)
+            self.update_score(-0.25)
         elif now > cert.not_valid_after:
             self.add_warning("Certificate expired")
-            self.update_score(-3)
+            self.update_score(-0.5)
         else:
             self.add_finding("Certificate is valid")
-            self.update_score(2)
+            self.update_score(0.5)
 
     def check_key_strength(self, cert: x509.Certificate) -> None:
         key_size = cert.public_key().key_size
         if isinstance(cert.public_key(), rsa.RSAPublicKey):
             if key_size >= 4096:
                 self.add_finding("Strong RSA key size (>= 4096 bits)")
-                self.update_score(3)
+                self.update_score(1)
             elif key_size >= 2048:
                 self.add_finding("Adequate RSA key size (>= 2048 bits)")
-                self.update_score(2)
+                self.update_score(0.5)
             else:
                 self.add_warning("Weak RSA key size (< 2048 bits)")
-                self.update_score(-2)
+                self.update_score(-0.25)
         elif isinstance(cert.public_key(), ec.EllipticCurvePublicKey):
             if key_size >= 384:
                 self.add_finding("Strong ECC key size (>= 384 bits)")
-                self.update_score(3)
+                self.update_score(1)
             elif key_size >= 256:
                 self.add_finding("Adequate ECC key size (>= 256 bits)")
-                self.update_score(2)
+                self.update_score(0.5)
             else:
                 self.add_warning("Weak ECC key size (< 256 bits)")
-                self.update_score(-2)
+                self.update_score(-0.25)
 
     def check_signature_algorithm(self, cert: x509.Certificate) -> None:
         weak_algorithms = ['md5', 'sha1']
         if any(alg in cert.signature_algorithm_oid._name.lower() for alg in weak_algorithms):
             self.add_warning("Weak signature algorithm")
-            self.update_score(-2)
+            self.update_score(-0.25)
         else:
             self.add_finding("Strong signature algorithm")
-            self.update_score(2)
+            self.update_score(0.5)
 
     def check_certificate_transparency(self, openssl_cert: OpenSSL.crypto.X509) -> None:
         scts = openssl_cert.get_extension_count()
@@ -233,27 +234,27 @@ class SSLTLSAnalyzer:
             ext = openssl_cert.get_extension(i)
             if ext.get_short_name() == b'CT Precertificate SCTs':
                 self.add_finding("Certificate Transparency SCTs found")
-                self.update_score(2)
+                self.update_score(0.5)
                 return
         self.add_warning("No Certificate Transparency SCTs found")
-        self.update_score(-1)
+        self.update_score(-0.25)
 
     def check_cipher_strength(self, cipher_name: str) -> None:
         weak_ciphers = ['RC4', 'DES', '3DES', 'MD5', 'NULL']
         if any(weak in cipher_name for weak in weak_ciphers):
             self.add_warning(f"Weak cipher suite: {cipher_name}")
-            self.update_score(-2)
+            self.update_score(-0.25)
         else:
             self.add_finding(f"Strong cipher suite: {cipher_name}")
-            self.update_score(2)
+            self.update_score(0.5)
 
     def generate_report(self) -> Dict[str, Any]:
         overall_assessment = "Low security risk"
-        if self.results['score'] < 0:
+        if self.results['score'] == 0:
             overall_assessment = "High security risk - immediate action recommended"
-        elif self.results['score'] < 5:
+        elif self.results['score'] <= 5:
             overall_assessment = "Moderate security risk - improvements needed"
-        elif self.results['score'] >= 10:
+        elif self.results['score'] >= 6:
             overall_assessment = "Excellent security - no immediate action required"
 
         return {
